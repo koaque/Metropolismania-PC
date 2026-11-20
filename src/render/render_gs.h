@@ -195,6 +195,12 @@ namespace mm::render
         uint32_t m_clut[256] = {};
         uint32_t m_cbp0 = ~0u, m_cbp1 = ~0u;
         uint64_t m_clutHash = 0;
+        // the palette's hash, by blocks of 16 entries (a 4-bit palette load writes one): each block's hash is made again
+        // only when its entries differ from the copy taken when it was last hashed
+        uint64_t hashClut();
+        uint32_t m_clutShadow[256] = {};
+        uint64_t m_clutBlockHash[16] = {};
+        bool m_clutShadowValid = false;
 
         // vertex queue
         Vertex m_queue[3] = {};

@@ -292,9 +292,7 @@ namespace mm::render
                     }
                 }
                 m_vram.loadClut(t, m_clut);
-                uint64_t h = 0;
-                for (uint32_t c : m_clut)
-                    h = mix(h, c);
+                const uint64_t h = hashClut();
                 m_clutHash = h;
                 if (whole)
                 {
@@ -688,6 +686,27 @@ namespace mm::render
                 m_decoded.clear();
         }
         return key;
+    }
+
+    uint64_t Gs::hashClut()
+    {
+        uint64_t h = 0;
+        for (uint32_t b = 0; b < 16; ++b)
+        {
+            const uint32_t *entries = m_clut + b * 16u;
+            uint32_t *shadow = m_clutShadow + b * 16u;
+            if (!m_clutShadowValid || std::memcmp(entries, shadow, 16u * sizeof(uint32_t)) != 0)
+            {
+                uint64_t block = 0;
+                for (uint32_t i = 0; i < 16; ++i)
+                    block = mix(block, entries[i]);
+                m_clutBlockHash[b] = block;
+                std::memcpy(shadow, entries, 16u * sizeof(uint32_t));
+            }
+            h = mix(h, m_clutBlockHash[b]);
+        }
+        m_clutShadowValid = true;
+        return h;
     }
 
     DrawState Gs::currentState(Topology topology)
