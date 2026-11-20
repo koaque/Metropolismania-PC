@@ -10,6 +10,7 @@
 // words: TEX0's low word, the texture-coordinate set's address, the flags, 1.0), or three a triangle.
 
 #include "render_vu1.h"
+#include "render_vu1_math.h"
 
 #include <algorithm>
 #include <cmath>
@@ -20,25 +21,13 @@ namespace mm::render
 {
     namespace
     {
-        struct Vec4
-        {
-            float x = 0, y = 0, z = 0, w = 0;
-            float &operator[](int i) { return (&x)[i]; }
-            float operator[](int i) const { return (&x)[i]; }
-            Vec4 operator-(const Vec4 &o) const { return {x - o.x, y - o.y, z - o.z, w - o.w}; }
-        };
+        // Vec4 and transform (in the VU's MULA / MADDA order): render_vu1_math.h, four lanes at once on x64.
+        using vumath::Vec4;
+        using vumath::transform;
 
         Vec4 load(const VuMemory &m, uint32_t address)
         {
             return {m.real(address, 0), m.real(address, 1), m.real(address, 2), m.real(address, 3)};
-        }
-
-        Vec4 transform(const Vec4 &v, const Vec4 m[4])
-        {
-            Vec4 r;
-            for (int i = 0; i < 4; ++i)
-                r[i] = ((m[0][i] * v.x + m[1][i] * v.y) + m[2][i] * v.z) + m[3][i] * v.w;
-            return r;
         }
 
         // a x b, as OPMULA / OPMSUB give it
