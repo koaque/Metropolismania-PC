@@ -91,6 +91,9 @@ The records and the inventory's output are game-derived and stay in `work/`.
   To check a change to the renderer exactly: `MMPC_FRAME_HASH=1` logs a hash of each frame's draw list (vertices, each
   batch's range and state; textures by their content keys), and with the deterministic timer (`PS2X_TIMER0=frame`) two
   runs of the same autoplay script give the same hash frame for frame, so a build can be compared with the one before it.
+  An untextured batch's S, T and Q are left out of the hash: nothing reads them (the shader reads them only for a
+  textured draw), and a model program sends whatever its memory holds there. `MMPC_FRAME_HASH_AT=<frame>` also logs that
+  frame batch by batch (range, main state, a hash of each), to find where two runs part.
   `MMPC_GS_DIRECT=0` takes every VU1 packet vertex by vertex through the GS queue and drawing kick, which the renderer
   otherwise skips for plain triangle strips; `MMPC_STRIP_VERIFY=1` draws each plain strip both ways and compares them.
 * A runtime hook (`PS2Memory::setDmaStartObserver`) hands the renderer every VIF1 and GIF DMA start. On the game thread the
@@ -247,12 +250,13 @@ native renderer.
 
 The top is 4 because of speed, which the native render thread sets (the CPU side: VIF unpacks, the VU1 programs, the GS
 draw list). At street level (zoomed in, looking along the streets, where a longer view draws the most) the game holds 60
-frames a second at 2, and runs at 49 to 58 at 3 and 36 to 51 at 4. In the explore autoplay 2 stays at 60, and 3 and 4 run
-at 60 most of the time and drop to about 53 and 37 at worst. Fully zoomed out the camera looks down and every setting holds
-60. Measured in borderless fullscreen at 2560x1440 (scale 4, 2560x1792, anisotropic 16) with the window focused, on an
-i7-9700K and a Radeon RX 6900 XT. Before the render thread work of 2026-11-20 street level ran at 31 to 47 at 3 and 24 to
-38 at 4, and the explore autoplay dropped to 32 and 23; 8 (which reached the whole map from anywhere on it) ran at 13 to
-24. The window size makes no difference to these figures (a 640x448 window and fullscreen gave the same within 0.1 frames
+frames a second at 2 and 3 (59.3 at worst at 3), and runs at 47 to 58 at 4. In the explore autoplay 2 and 3 stay at 60,
+and 4 runs at 60 most of the time (58.9 or more in 9 of every 10 two-second windows) and drops to about 51 at worst. Fully
+zoomed out the camera looks down and every setting holds 60. Measured in borderless fullscreen at 2560x1440 (scale 4,
+2560x1792, anisotropic 16) with the window focused, on an i7-9700K and a Radeon RX 6900 XT. On the morning of 2026-11-20,
+before that day's render thread work and the extras pass's trimmed lists (below), street level ran at 31 to 47 at 3 and
+24 to 38 at 4, and the explore autoplay dropped to 32 and 23; 8 (which reached the whole map from anywhere on it) ran at
+13 to 24. The window size makes no difference to these figures (a 640x448 window and fullscreen gave the same within 0.1 frames
 a second), and the GPU is not what limits them: at 4 it was at most 62% busy, about 10 ms a frame at 60, and 15 to 40%
 while the game waited on the render thread.
 
@@ -270,6 +274,20 @@ or longer view adds is drawn by the extras pass (`src/port/extras.cpp`), with th
   above it would look full). The renderer copies each batch out and draws it in frame N's stream where the HUD starts,
   after the game's world. The layers that move on in their draw (waves, rain, snow, the head-turn timers) are not stepped
   again for each batch, so the extras show them as the frame has them.
+* A batch fills only its own quads of the terrain buffer's 624 slots (one a tile, so at most 96), but the game's chunk
+  lists send every slot, the empty ones flagged off, through every pass that runs them: the chunk packet the ground, the
+  sea and lake bottoms, the lit roads and the weather's ground pass call (24 chunks of 26 quads), the water's list (39 of
+  16), the rain's and the snow's (78 of 8), and the cliff sides' (20 chunks of 36 triangles). For each batch the pass puts
+  a RET in place of each list's first chunk past the batch's last quad or triangle, and puts the chunk back once the
+  renderer has the batch. The chunks left out hold only flagged-off slots, which draw nothing: with the deterministic timer
+  every frame's draw list is the same with and without it (6,514 frames of the street-level script and 6,996 of the
+  explore autoplay at 4), and a batch carries about a third of the data it did (146 KB instead of 428 KB); street level at
+  4 went from 36 to 51 frames a second to 47 to 58, and 3 to a steady 60. `MMPC_EXTRAS_TRIM=0` sends the lists
+  whole, as the game does (a number picks lists: 1 the chunk packet, 2 water, 4 rain, 8 snow, 16 sides).
+* The cliff sides go into the buffer the side packet draws. The game writes its sides into the buffer of the frame's parity
+  but keeps the first buffer's packet in both of its side packet slots, so the first buffer is drawn on every frame (on odd
+  frames the game shows the sides it found the frame before). The pass first wrote by parity too, so on odd frames every
+  batch drew the game's own sides again instead of its own, and the far sides were missing every other frame.
 * `MMPC_EXTRAS_DEBUG=1` draws what the pass adds in flat magenta, without fog and whatever is in front, to see it.
 * Then guest memory and the registers are put back. People outside the PS2's view are thus drawn where the game has them,
   standing: their step, pose and flags are undone every frame. They walk once they come into the PS2's own view.
@@ -279,7 +297,8 @@ or longer view adds is drawn by the extras pass (`src/port/extras.cpp`), with th
   way: the programs take fog = a + b / w, so b times the factor puts every fog level that many times farther.
 * Checked: with `PS2X_TIMER0=frame`, the explore autoplay off, at 16:9, at view distance 2 and with both, all 32 MB of RDRAM
   and the scratchpad are identical at each of 24 records (`MMPC_CAPTURE_KEEP_PORTS=1`, so the ported code ran).
-  `MMPC_EXTRAS_STATS=1` logs the pass's tiles, batches, pages put back and game thread time.
+  Again on 2026-11-20 after the list trimming and the side fix, at 4 (24 records, ported code, settings file): identical.
+  `MMPC_EXTRAS_STATS=1` logs the pass's tiles, batches, cliff-side triangles, pages put back and game thread time.
 
 ## Native only (N5)
 

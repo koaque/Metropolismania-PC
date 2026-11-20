@@ -332,8 +332,7 @@ namespace mm::render
         // The render thread: the frame built so far goes to the window thread.
         void publishFrame(Renderer &r, const Work &end)
         {
-            Frame frame = r.gs.takeFrame();
-            frame.wide = end.wide;
+            Frame frame = r.gs.takeFrame(end.wide);
             // MMPC_RENDER_STATS=1: every 120 frames, what the last one held (batches, vertices, their extent).
             static const bool s_stats = [] {
                 const char *v = std::getenv("MMPC_RENDER_STATS");

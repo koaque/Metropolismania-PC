@@ -119,8 +119,8 @@ namespace mm::render
             m_test[ctx & 1] = test;
         }
 
-        // The frame being built, handed over and started anew.
-        Frame takeFrame();
+        // The frame being built, handed over and started anew; `wide`: the city drew it with its widened view.
+        Frame takeFrame(bool wide);
         // The vertex and batch arrays of a frame the window thread is done with: the frame being built takes them over (emptied),
         // so it does not grow its arrays from nothing (a long view distance sends hundreds of thousands of vertices a frame).
         void reuseBuffers(std::vector<Vertex> &&vertices, std::vector<Batch> &&batches);

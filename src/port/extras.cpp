@@ -196,6 +196,21 @@ namespace mm
             std::stable_sort(out.begin(), out.end(), [](const ExtraTile &a, const ExtraTile &b) { return a.distance < b.distance; });
         }
 
+        // The cliff-side buffer this frame's side packet draws. Terrain_Draw writes the buffer of the frame's parity, but the
+        // game keeps the first section's packet in both side packet slots (Terrain_BuildSidePackets), so buffer 0 is drawn on
+        // every frame: on odd frames the game shows the sides it found the frame before. A batch is drawn as soon as it is
+        // made, so its sides go where the packet reads (the first chunk's REF), else odd frames would draw no far sides and
+        // repeat the game's own in every batch.
+        uint32_t sideBufferDrawn(GuestPtr<CityMap> map)
+        {
+            const uint32_t parity = globals::frameParity.get() & 1u;
+            const uint32_t source = port::load<uint32_t>(map->sidePackets[parity] + 0x64u);
+            for (uint32_t b = 0; b < 2; ++b)
+                if (source == (map->sideBuffers[b].address & 0x7FFFFFFFu))
+                    return b;
+            return parity;
+        }
+
         // Starts a batch: the other DMA list and the terrain walk's state as Terrain_Draw starts them.
         void startBatch(GuestPtr<CityMap> map, uint32_t list)
         {
@@ -216,7 +231,7 @@ namespace mm
             const uint32_t parity = globals::frameParity.get() & 1u;
             map->terrainWrite = map->terrainBuffers[parity];
             map->sideVertices = 0;
-            map->sideWrite = map->sideBuffers[parity];
+            map->sideWrite = map->sideBuffers[sideBufferDrawn(map)];
         }
 
         // One tile into the batch, as Terrain_Draw adds one; `drawObject` false leaves its object out of the object and
@@ -239,6 +254,88 @@ namespace mm
             map->sortedCount = entry + 1;
         }
 
+        // A batch fills a few of the terrain buffer's 624 quad slots, but the game's chunk lists send every slot (the empty
+        // ones flagged off) through every pass that runs them: the chunk packet that the ground, the sea and lake bottoms,
+        // the lit roads and the weather's ground pass CALL, and the water's and the weather's own lists; the same for the
+        // cliff-side buffer's 720 triangle slots. Each list gets a RET in place of its first chunk past the batch's last quad
+        // or triangle, put back once the renderer has taken the batch; the chunks left out hold only flagged-off slots, which
+        // draw nothing (checked: every frame's draw list the same). MMPC_EXTRAS_TRIM=0 sends them all, as the game does; a
+        // number picks the lists (1 the chunk packet, 2 the water's, 4 the rain's, 8 the snow's, 16 the cliff sides').
+        struct CutChunk
+        {
+            uint32_t at;
+            uint32_t words[4];
+        };
+        std::vector<CutChunk> s_cuts;
+
+        uint32_t trimChunks()
+        {
+            static const uint32_t lists = [] {
+                const char *v = std::getenv("MMPC_EXTRAS_TRIM");
+                return v == nullptr ? 0x1Fu : static_cast<uint32_t>(std::strtoul(v, nullptr, 0));
+            }();
+            return lists;
+        }
+
+        // The list whose first chunk is at `first` (`chunks` of them, each a REF tag `tag` of `chunkBytes` from `source`
+        // on, its UNPACK and an MSCNT): a RET in place of chunk `used`. Left as it is when that chunk is not the one expected.
+        void cutChunks(uint32_t first, uint32_t chunks, uint32_t tag, uint32_t source, uint32_t chunkBytes, uint32_t used)
+        {
+            if (used >= chunks)
+                return;
+            const uint32_t at = first + 0x20u * used;
+            if (port::load<uint32_t>(at) != tag || port::load<uint32_t>(at + 4u) != ((source + chunkBytes * used) & 0x7FFFFFFFu))
+            {
+                static bool s_warned = false;
+                if (!s_warned)
+                {
+                    s_warned = true;
+                    std::cerr << "[extras] a chunk list is not laid out as expected at 0x" << std::hex << at << std::dec
+                              << ": sent whole" << std::endl;
+                }
+                return;
+            }
+            CutChunk cut{at, {}};
+            for (uint32_t i = 0; i < 4; ++i)
+                cut.words[i] = port::load<uint32_t>(at + 4u * i);
+            s_cuts.push_back(cut);
+            port::store<uint32_t>(at, 0x60000000u); // RET, no data, no VIF codes
+            port::store<uint32_t>(at + 4u, 0u);
+            port::store<uint32_t>(at + 8u, 0u);
+            port::store<uint32_t>(at + 12u, 0u);
+        }
+
+        void cutBatchLists(GuestPtr<CityMap> map)
+        {
+            const uint32_t parity = globals::frameParity.get() & 1u;
+            const uint32_t quads = static_cast<uint32_t>(map->terrainQuads) / 4u;
+            const uint32_t buffer = map->terrainBuffers[parity].address;
+            const auto chunksFor = [&](uint32_t per) { return (quads + per - 1u) / per; };
+            const uint32_t lists = trimChunks();
+            if (lists & 1u)
+                cutChunks(map->chunkPackets[parity], 24, 0x30000068u, buffer, 0x680u, chunksFor(26));
+            if ((lists & 2u) && map->water.address != 0)
+                cutChunks(map->water->packets[parity] + 0xA0u, 39, 0x30000040u, buffer, 0x400u, chunksFor(16));
+            if ((lists & 4u) && map->rain.address != 0)
+                cutChunks(map->rain->startPackets[parity] + 0x50u, 78, 0x30000020u, buffer, 0x200u, chunksFor(8));
+            if ((lists & 8u) && map->snow.address != 0)
+                cutChunks(map->snow->startPackets[parity] + 0x90u, 78, 0x30000020u, buffer, 0x200u, chunksFor(8));
+            if (lists & 16u) // the cliff sides: 36 triangles a chunk, in the buffer the side packet draws
+            {
+                const uint32_t triangles = static_cast<uint32_t>(map->sideVertices) / 3u;
+                cutChunks(map->sidePackets[parity] + 0x60u, 20, 0x3000006Cu, map->sideBuffers[sideBufferDrawn(map)].address, 0x6C0u,
+                          (triangles + 35u) / 36u);
+            }
+        }
+
+        void restoreBatchLists()
+        {
+            for (auto cut = s_cuts.rbegin(); cut != s_cuts.rend(); ++cut)
+                for (uint32_t i = 0; i < 4; ++i)
+                    port::store<uint32_t>(cut->at + 4u * i, cut->words[i]);
+            s_cuts.clear();
+        }
+
         // Ends the batch's terrain as Terrain_Draw does (the unfilled quads and side triangles are not drawn), then the
         // world passes the city runs after its walk (city.cpp, CityScene's draw), and an END tag.
         void drawBatch(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
@@ -253,6 +350,8 @@ namespace mm
                 port::store<uint32_t>(packet::addressOf(GuestPtr<Vec4>{map->sideWrite.address}[2].w), 0u);
                 map->sideWrite = GuestPtr<void>{map->sideWrite.address + 0x30u};
             }
+            if (trimChunks() != 0)
+                cutBatchLists(map);
             port::enhance::markFrameList(port::enhance::Span::WorldCamera);
             Packet_Draw(GuestPtr<uint32_t>::of(city->cityCamera->base.packet));
             CityRender_DrawTerrain(map, city);
@@ -277,7 +376,7 @@ namespace mm
 
         struct Stats
         {
-            uint32_t passes = 0, tiles = 0, batches = 0, pages = 0;
+            uint32_t passes = 0, tiles = 0, batches = 0, pages = 0, sides = 0;
             double seconds = 0.0, worst = 0.0;
         };
     }
@@ -317,7 +416,7 @@ namespace mm
         const uint32_t list = port::load<uint32_t>(globals::kDmaLists + 4u * globals::dmaListIndex.get());
         globals::instanceBuffer.set(globals::instanceBuffer.get() ^ 1);
         const ps2f level = city->waterLevel;
-        uint32_t batches = 0;
+        uint32_t batches = 0, sides = 0;
         static bool s_warned = false;
         for (size_t next = 0; next < tiles.size();)
         {
@@ -332,6 +431,7 @@ namespace mm
                 addTile(map, t, fresh, level);
                 ++count;
             }
+            sides += static_cast<uint32_t>(map->sideVertices) / 3u;
             drawBatch(map, city);
             if (!s_warned && (globals::instanceCount.get() >= 0x708 - 64 || globals::dmaListPtr.get() - list > 0xF000u))
             {
@@ -340,6 +440,7 @@ namespace mm
                           << " instances, " << (globals::dmaListPtr.get() - list) << " bytes)" << std::endl;
             }
             render::takeExtras(list);
+            restoreBatchLists();
             ++batches;
         }
 
@@ -360,6 +461,7 @@ namespace mm
             ++stats.passes;
             stats.tiles += static_cast<uint32_t>(tiles.size());
             stats.batches += batches;
+            stats.sides += sides;
             stats.pages += static_cast<uint32_t>(pages);
             stats.seconds += seconds;
             stats.worst = std::max(stats.worst, seconds);
@@ -367,8 +469,8 @@ namespace mm
             {
                 const double n = 120.0;
                 std::cerr << "[extras] a pass: " << stats.tiles / n << " tiles in " << stats.batches / n << " batches, "
-                          << stats.pages / n << " pages put back, " << stats.seconds * 1000.0 / n << " ms (" << stats.worst * 1000.0
-                          << " worst)" << std::endl;
+                          << stats.sides / n << " cliff-side triangles, " << stats.pages / n << " pages put back, "
+                          << stats.seconds * 1000.0 / n << " ms (" << stats.worst * 1000.0 << " worst)" << std::endl;
                 stats = Stats{};
             }
         }

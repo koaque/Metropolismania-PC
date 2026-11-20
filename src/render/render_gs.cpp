@@ -5,9 +5,11 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <sstream>
 
 // The per-vertex steps of a VU1 packet: inlined into their loops (a call per vertex, with the stack check a copied VuVertex
 // brings, cost more than the drawing they do).
@@ -1120,7 +1122,8 @@ namespace mm::render
 
     // MMPC_FRAME_HASH=1: what a frame draws (its vertices, and each batch's range and state, field by field) as one number,
     // logged per frame, so two runs of the same script with the deterministic timer (PS2X_TIMER0=frame) can be compared
-    // frame for frame. Not the textures' pixels: a batch's texture key is a hash of them.
+    // frame for frame. Not the textures' pixels: a batch's texture key is a hash of them. An untextured batch's S, T and Q
+    // are left out: nothing reads them (a model program sends whatever its memory holds there), so they never reach a pixel.
     uint64_t Gs::frameHash(const Frame &frame)
     {
         uint64_t h = 0x84222325CBF29CE4ull;
@@ -1137,7 +1140,24 @@ namespace mm::render
             for (; i < size; ++i)
                 word(p[i]);
         };
-        bytes(frame.vertices.data(), frame.vertices.size() * sizeof(Vertex));
+        size_t covered = 0; // vertices outside every batch (none expected) are hashed whole, after the batches' own
+        for (const Batch &b : frame.batches)
+        {
+            if (b.first + b.count > frame.vertices.size())
+                continue;
+            const Vertex *v = frame.vertices.data() + b.first;
+            if (b.state.textured)
+                bytes(v, b.count * sizeof(Vertex));
+            else
+                for (uint32_t i = 0; i < b.count; ++i)
+                {
+                    bytes(&v[i], offsetof(Vertex, s));
+                    word(std::bit_cast<uint32_t>(v[i].fog));
+                }
+            covered += b.count;
+        }
+        if (covered != frame.vertices.size())
+            bytes(frame.vertices.data(), frame.vertices.size() * sizeof(Vertex));
         for (const Batch &b : frame.batches)
         {
             const DrawState &s = b.state;
@@ -1160,8 +1180,9 @@ namespace mm::render
         return h;
     }
 
-    Frame Gs::takeFrame()
+    Frame Gs::takeFrame(bool wide)
     {
+        m_frame.wide = wide; // before the hash, which covers it
         // The buffer this frame was drawn into, for later frames that read it back.
         {
             const uint32_t page = static_cast<uint32_t>(m_frameReg[0] & 0x1FF);
@@ -1184,9 +1205,39 @@ namespace mm::render
             const char *value = std::getenv("MMPC_FRAME_HASH");
             return value != nullptr && value[0] == '1';
         }();
+        // each line written whole, so other threads' output cannot land inside it
+        const auto logLine = [](const std::ostringstream &line) {
+            const std::string text = line.str() + "\n";
+            std::cerr.write(text.data(), static_cast<std::streamsize>(text.size()));
+            std::cerr.flush();
+        };
         if (logHash)
-            std::cerr << "[render] frame " << m_frame.number << " hash " << std::hex << frameHash(m_frame) << std::dec
-                      << " vertices " << m_frame.vertices.size() << " batches " << m_frame.batches.size() << std::endl;
+        {
+            std::ostringstream line;
+            line << "[render] frame " << m_frame.number << " hash " << std::hex << frameHash(m_frame) << std::dec << " vertices "
+                 << m_frame.vertices.size() << " batches " << m_frame.batches.size();
+            logLine(line);
+        }
+        // MMPC_FRAME_HASH_AT=N: frame N batch by batch (its range, main state and the hash of it alone), to find where two
+        // runs part
+        static const long hashAt = [] {
+            const char *value = std::getenv("MMPC_FRAME_HASH_AT");
+            return value != nullptr ? std::strtol(value, nullptr, 0) : -1L;
+        }();
+        if (hashAt >= 0 && m_frame.number == static_cast<uint64_t>(hashAt))
+            for (size_t i = 0; i < m_frame.batches.size(); ++i)
+            {
+                const Batch &b = m_frame.batches[i];
+                Frame one;
+                one.vertices.assign(m_frame.vertices.begin() + b.first, m_frame.vertices.begin() + b.first + b.count);
+                one.batches.push_back(Batch{b.state, 0, b.count});
+                const DrawState &s = b.state;
+                std::ostringstream line;
+                line << "[render] frame " << m_frame.number << " batch " << i << " first " << b.first << " count " << b.count
+                     << " topology " << static_cast<int>(s.topology) << " texture " << std::hex << s.texture << " hud "
+                     << static_cast<int>(s.hud) << " blend " << static_cast<int>(s.blend) << " hash " << frameHash(one) << std::dec;
+                logLine(line);
+            }
         Frame out = std::move(m_frame);
         m_frame = Frame{};
         m_frame.number = out.number + 1;
