@@ -1,6 +1,7 @@
 // The renderer's VIF1. See render_vif.h.
 
 #include "render_vif.h"
+#include "render_vif_unpack.h"
 
 #include "enhance.h"
 
@@ -160,74 +161,22 @@ namespace mm::render
             return bytes;
         }
 
-        uint32_t source = 0;
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            const uint32_t cycle = i % wl;
-            const bool fromData = cl >= wl || cycle < cl;
-            const uint32_t destination = cl >= wl ? (address + (i / wl) * cl + cycle) & 0x3FF : (address + i) & 0x3FF;
-            uint32_t *lanes = m_memory.qword(destination);
-            uint32_t value[4] = {lanes[0], lanes[1], lanes[2], lanes[3]};
-            bool decoded = false;
-            if (fromData && source < sourceVectors)
-            {
-                const uint8_t *v = data + static_cast<size_t>(source) * vectorBytes;
-                ++source;
-                decoded = true;
-                if (v45)
-                {
-                    uint16_t packed;
-                    std::memcpy(&packed, v, 2);
-                    value[0] = (packed & 0x1Fu) << 3;
-                    value[1] = (packed & 0x3E0u) >> 2;
-                    value[2] = (packed & 0x7C00u) >> 7;
-                    value[3] = (packed & 0x8000u) >> 8;
-                }
-                else
-                {
-                    for (uint32_t c = 0; c < components; ++c)
-                    {
-                        if (vl == 0)
-                            std::memcpy(&value[c], v + c * 4u, 4);
-                        else if (vl == 1)
-                        {
-                            uint16_t raw;
-                            std::memcpy(&raw, v + c * 2u, 2);
-                            value[c] = zeroExtend ? raw : static_cast<uint32_t>(static_cast<int32_t>(static_cast<int16_t>(raw)));
-                        }
-                        else
-                            value[c] = zeroExtend ? v[c] : static_cast<uint32_t>(static_cast<int32_t>(static_cast<int8_t>(v[c])));
-                    }
-                    if (components == 1)
-                        value[1] = value[2] = value[3] = value[0];
-                    else if (components == 2) // the hardware writes x y x y
-                        value[2] = value[0], value[3] = value[1];
-                }
-            }
-            const uint32_t slot = std::min(cycle, 3u);
-            for (uint32_t field = 0; field < 4; ++field)
-            {
-                uint32_t spec = masked ? (m_mask >> ((slot * 4u + field) * 2u)) & 3u : 0u;
-                if (!decoded && spec == 0)
-                    spec = 1; // a filled vector takes ROW where it would take data
-                if (spec == 0)
-                {
-                    uint32_t v = value[field];
-                    if (!v45 && (m_mode == 1 || m_mode == 2))
-                    {
-                        v += m_row[field];
-                        if (m_mode == 2)
-                            m_row[field] = v;
-                    }
-                    lanes[field] = v;
-                }
-                else if (spec == 1)
-                    lanes[field] = m_row[field];
-                else if (spec == 2)
-                    lanes[field] = m_col[slot];
-                // 3: write-protected
-            }
-        }
+        // Everything else (masks, row modes, CL != WL, V4-5): render_vif_unpack.h, made per format and row mode.
+        unpack::Job job;
+        job.memory = m_memory.qword(0);
+        job.data = data;
+        job.address = address;
+        job.count = count;
+        job.sourceVectors = sourceVectors;
+        job.vectorBytes = vectorBytes;
+        job.cl = cl;
+        job.wl = wl;
+        job.zeroExtend = zeroExtend;
+        job.masked = masked;
+        job.mask = m_mask;
+        job.row = m_row;
+        job.col = m_col;
+        unpack::general(job, vn, vl, m_mode);
         if (m_adjustCamera && address == 0 && count >= 8)
             adjustWorldCamera(count);
         return bytes;
