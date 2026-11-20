@@ -6,11 +6,16 @@
 // precision, where the VU1 would have sent fixed-point GIF packets (XGKICK). Each program is written from what the
 // microcode does (docs/RENDER_PIPELINE.md) and checked against captured runs of the real one (render_vu1_test.cpp).
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <deque>
 #include <vector>
+#if defined(_M_X64) || defined(__x86_64__)
+#include <xmmintrin.h>
+#endif
 
 namespace mm::render
 {
@@ -148,5 +153,19 @@ namespace mm::render
 
     // The fixed-point values a vertex becomes in a packed GIF packet (for comparisons with the real programs).
     uint32_t vuFtoi4(float f);
-    uint32_t vuFtoi0(float f);
+
+    // The VU's FTOI0: truncation toward zero, saturating at the int32 range. Inline, since the programs take every colour
+    // byte through it. On x64 one truncating conversion: exact inside the range, 0x80000000 below it and for NaN (what the
+    // portable version's cast gives there too), so only 2^31 and above need their own case.
+    inline uint32_t vuFtoi0(float f)
+    {
+#if defined(_M_X64) || defined(__x86_64__)
+        if (f >= 2147483648.0f)
+            return 0x7FFFFFFFu;
+        return static_cast<uint32_t>(_mm_cvtt_ss2si(_mm_set_ss(f)));
+#else
+        const double v = std::trunc(static_cast<double>(f));
+        return static_cast<uint32_t>(static_cast<int32_t>(std::clamp(v, -2147483648.0, 2147483647.0)));
+#endif
+    }
 }

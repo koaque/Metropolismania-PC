@@ -41,22 +41,25 @@ namespace mm::render
 
     void runVuProgram(VuProgram &program, VuMemory &memory, int32_t entry, uint32_t top, uint32_t itop, VuPacketList &out)
     {
+#if defined(_M_X64) || defined(__x86_64__)
+        // x64 float arithmetic is all SSE, so the SSE rounding bits are enough (fesetround also sets the x87 control word,
+        // which made it about 2% of the render thread at a long view distance)
+        const unsigned int csr = _mm_getcsr();
+        _mm_setcsr((csr & ~_MM_ROUND_MASK) | _MM_ROUND_TOWARD_ZERO);
+        program.run(memory, entry, top, itop, out);
+        _mm_setcsr(csr);
+#else
         const int rounding = std::fegetround();
         std::fesetround(FE_TOWARDZERO);
         program.run(memory, entry, top, itop, out);
         std::fesetround(rounding);
+#endif
     }
 
-    // The VU's FTOI4 and FTOI0: truncation toward zero, saturating at the int32 range.
+    // The VU's FTOI4: truncation toward zero, saturating at the int32 range.
     uint32_t vuFtoi4(float f)
     {
         const double v = std::trunc(static_cast<double>(f) * 16.0);
-        return static_cast<uint32_t>(static_cast<int32_t>(std::clamp(v, -2147483648.0, 2147483647.0)));
-    }
-
-    uint32_t vuFtoi0(float f)
-    {
-        const double v = std::trunc(static_cast<double>(f));
         return static_cast<uint32_t>(static_cast<int32_t>(std::clamp(v, -2147483648.0, 2147483647.0)));
     }
 
