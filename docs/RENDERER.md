@@ -88,6 +88,11 @@ The records and the inventory's output are game-derived and stay in `work/`.
   `MMPC_RENDER_STATS=1` prints what a frame held every 120 frames (batches, new textures, VU1 programs it ran, program runs
   without a native version, the time per frame on the game thread and on the render thread, frames drawn).
   `MMPC_SHOT_FEEDBACK=<folder>` writes the first 16 frames that read the frame before (below) there, to look at them.
+  To check a change to the renderer exactly: `MMPC_FRAME_HASH=1` logs a hash of each frame's draw list (vertices, each
+  batch's range and state; textures by their content keys), and with the deterministic timer (`PS2X_TIMER0=frame`) two
+  runs of the same autoplay script give the same hash frame for frame, so a build can be compared with the one before it.
+  `MMPC_GS_DIRECT=0` takes every VU1 packet vertex by vertex through the GS queue and drawing kick, which the renderer
+  otherwise skips for plain triangle strips; `MMPC_STRIP_VERIFY=1` draws each plain strip both ways and compares them.
 * A runtime hook (`PS2Memory::setDmaStartObserver`) hands the renderer every VIF1 and GIF DMA start. On the game thread the
   renderer only copies the transfer's data out of RDRAM (walking the chain) with the GS's drawing environment at that
   moment; a render thread then takes the transfers in order, sends DIRECT payloads to its GS state machine
@@ -240,14 +245,16 @@ port's first enhancement switch; with it off the port runs as before).
 the city that many times as far as the PS2 does, with the fog moved out by the same factor. Like widescreen it needs the
 native renderer.
 
-The top is 4 because of speed, which the native render thread sets. At street level (zoomed in, looking along the streets,
-where a longer view draws the most) the game holds 60 frames a second at 2, and runs at 31 to 47 at 3 and 24 to 38 at 4.
-Farther, 8 (which reached the whole map from anywhere on it) ran at 13 to 24. In the explore autoplay 2 stays at 60 (57 at
-its lowest), and 3 and 4 run at 60 most of the time and drop to about 32 and 23 at worst. Fully zoomed out the camera looks
-down and every setting holds 60. These figures are the same in a 640x448 window (scale 2) and in borderless fullscreen at
-2560x1440 (scale 4, 2560x1792, anisotropic 16): within 0.1 frames a second at every setting. The GPU (a Radeon RX 6900 XT)
-is not what limits them: at 4 it was at most 62% busy, about 10 ms a frame at 60, and 15 to 40% while the game waited on
-the render thread.
+The top is 4 because of speed, which the native render thread sets (the CPU side: VIF unpacks, the VU1 programs, the GS
+draw list). At street level (zoomed in, looking along the streets, where a longer view draws the most) the game holds 60
+frames a second at 2, and runs at 49 to 58 at 3 and 36 to 51 at 4. In the explore autoplay 2 stays at 60, and 3 and 4 run
+at 60 most of the time and drop to about 53 and 37 at worst. Fully zoomed out the camera looks down and every setting holds
+60. Measured in borderless fullscreen at 2560x1440 (scale 4, 2560x1792, anisotropic 16) with the window focused, on an
+i7-9700K and a Radeon RX 6900 XT. Before the render thread work of 2026-11-20 street level ran at 31 to 47 at 3 and 24 to
+38 at 4, and the explore autoplay dropped to 32 and 23; 8 (which reached the whole map from anywhere on it) ran at 13 to
+24. The window size makes no difference to these figures (a 640x448 window and fullscreen gave the same within 0.1 frames
+a second), and the GPU is not what limits them: at 4 it was at most 62% busy, about 10 ms a frame at 60, and 15 to 40%
+while the game waited on the render thread.
 
 The rule for both: the game's logic stays the PS2's. Drawing more the plain way would change the town, since the game's
 draw code also moves pedestrians on, steps their animation, turns them to the player and ticks counters. So what a wider
