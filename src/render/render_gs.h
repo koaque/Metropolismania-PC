@@ -147,6 +147,13 @@ namespace mm::render
     private:
         void kick(bool draw);
         void emit(const Vertex *v, int count, Topology topology, uint8_t snap = 0);
+        bool drawStateFor(const Vertex *v, int count, Topology topology, uint8_t snap, DrawState &state);
+        void putVertices(const Vertex *v, int count, const DrawState &state);
+        void addToBatch(const DrawState &state, uint32_t first, uint32_t count);
+        bool vuStrip(const VuPacket &packet);
+        void vuVertices(const VuPacket &packet);
+        void verifyStrip(const VuPacket &packet);
+        std::vector<Vertex> m_strip; // vuStrip's vertices, kept for reuse
         DrawState currentState(Topology topology);
         DrawState computeState(Topology topology);
         DrawState finishState(DrawState &s, uint64_t attributes, int ctx);

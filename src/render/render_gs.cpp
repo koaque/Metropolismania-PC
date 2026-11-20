@@ -449,6 +449,71 @@ namespace mm::render
             write(reg.first, reg.second);
         if (((packet.tagLo >> 46) & 1) != 0) // PRE
             write(PRIM, (packet.tagLo >> 47) & 0x7FF);
+        static const bool verify = [] {
+            const char *value = std::getenv("MMPC_STRIP_VERIFY");
+            return value != nullptr && value[0] == '1';
+        }();
+        if (verify)
+            verifyStrip(packet);
+        else if (!vuStrip(packet))
+            vuVertices(packet);
+    }
+
+    // MMPC_STRIP_VERIFY=1: a packet vuStrip takes is drawn by it, put back, and drawn again vertex by vertex, which is kept;
+    // the frame's new vertices and batches, the queue and the registers it leaves must be the same byte for byte.
+    void Gs::verifyStrip(const VuPacket &packet)
+    {
+        static uint64_t s_checked = 0, s_differ = 0;
+        const size_t v0 = m_frame.vertices.size(), b0 = m_frame.batches.size();
+        const uint32_t c0 = b0 != 0 ? m_frame.batches.back().count : 0;
+        Vertex queue0[3];
+        std::memcpy(queue0, m_queue, sizeof(m_queue));
+        const int queued0 = m_queued;
+        const float q0 = m_q;
+        const uint64_t rgbaq0 = m_rgbaq;
+        if (!vuStrip(packet))
+        {
+            vuVertices(packet);
+            return;
+        }
+        const size_t from = b0 != 0 ? b0 - 1 : 0;
+        const std::vector<Vertex> vertices(m_frame.vertices.begin() + static_cast<std::ptrdiff_t>(v0), m_frame.vertices.end());
+        const std::vector<Batch> batches(m_frame.batches.begin() + static_cast<std::ptrdiff_t>(from), m_frame.batches.end());
+        Vertex queue[3];
+        std::memcpy(queue, m_queue, sizeof(m_queue));
+        const int queued = m_queued;
+        const float q = m_q;
+        const uint64_t rgbaq = m_rgbaq;
+        m_frame.vertices.resize(v0);
+        m_frame.batches.resize(b0);
+        if (b0 != 0)
+            m_frame.batches.back().count = c0;
+        std::memcpy(m_queue, queue0, sizeof(m_queue));
+        m_queued = queued0;
+        m_q = q0;
+        m_rgbaq = rgbaq0;
+        vuVertices(packet);
+        bool same = vertices.size() == m_frame.vertices.size() - v0 &&
+                    std::memcmp(vertices.data(), m_frame.vertices.data() + v0, vertices.size() * sizeof(Vertex)) == 0 &&
+                    batches.size() == m_frame.batches.size() - from && queued == m_queued &&
+                    std::memcmp(queue, m_queue, sizeof(Vertex) * static_cast<size_t>(std::min(queued, 3))) == 0 &&
+                    std::memcmp(&q, &m_q, sizeof(q)) == 0 && rgbaq == m_rgbaq;
+        for (size_t i = 0; same && i < batches.size(); ++i)
+        {
+            const Batch &a = batches[i], &b = m_frame.batches[from + i];
+            same = a.state == b.state && a.first == b.first && a.count == b.count;
+        }
+        ++s_checked;
+        if (!same && s_differ++ < 10)
+            std::cerr << "[render] strip verify: packet " << s_checked << " of " << packet.vertices.size()
+                      << " vertices differs from vertex by vertex" << std::endl;
+        if (s_checked % 20000 == 0)
+            std::cerr << "[render] strip verify: " << s_checked << " strips, " << s_differ << " different" << std::endl;
+    }
+
+    // A packet's vertices one at a time through the queue and the drawing kick, as the GS takes them.
+    void Gs::vuVertices(const VuPacket &packet)
+    {
         for (const VuVertex &in : packet.vertices)
         {
             for (int i = 0; i < in.beforeCount; ++i)
@@ -846,7 +911,18 @@ namespace mm::render
 
     void Gs::emit(const Vertex *v, int count, Topology topology, uint8_t snap)
     {
-        DrawState state = currentState(topology);
+        DrawState state;
+        if (!drawStateFor(v, count, topology, snap, state))
+            return;
+        const uint32_t first = static_cast<uint32_t>(m_frame.vertices.size());
+        putVertices(v, count, state);
+        addToBatch(state, first, static_cast<uint32_t>(count));
+    }
+
+    // The state a primitive of these vertices draws with; false when it draws nothing (no colour or depth written).
+    bool Gs::drawStateFor(const Vertex *v, int count, Topology topology, uint8_t snap, DrawState &state)
+    {
+        state = currentState(topology);
         if (state.textured && state.texture != kPreviousFrame)
             state.snap = snap;
         if (m_span != 0 && !(state.textured && state.texture == kPreviousFrame))
@@ -865,11 +941,15 @@ namespace mm::render
         }
         if (m_tintExtras) // MMPC_EXTRAS_DEBUG: flat magenta, shown whatever the depth and alpha tests would say
             state.depthTest = 1, state.alphaTest = 1, state.textured = 0, state.fog = 0, state.blend = 0;
-        if (state.colorWrite == 0 && state.depthWrite == 0)
-            return;
+        return !(state.colorWrite == 0 && state.depthWrite == 0);
+    }
+
+    // One primitive's vertices into the frame: a flat one shaded with its last vertex, a frame-buffer read's texture
+    // coordinates made the frame's.
+    void Gs::putVertices(const Vertex *v, int count, const DrawState &state)
+    {
         const uint64_t attributes = (m_prmodecont & 1) ? m_prim : m_prmode;
         const bool flat = ((attributes >> 3) & 1) == 0;
-        const uint32_t first = static_cast<uint32_t>(m_frame.vertices.size());
         const bool previousFrame = state.texture == kPreviousFrame;
         float size[2] = {1.0f, 1.0f};
         if (previousFrame)
@@ -878,6 +958,11 @@ namespace mm::render
             const Tex0 t = Tex0::fromRegister(m_tex0[(attributesNow >> 9) & 1]);
             size[0] = static_cast<float>(1u << std::min(t.tw, 10u));
             size[1] = static_cast<float>(1u << std::min(t.th, 10u));
+        }
+        if (!flat && !previousFrame)
+        {
+            m_frame.vertices.insert(m_frame.vertices.end(), v, v + count);
+            return;
         }
         for (int i = 0; i < count; ++i)
         {
@@ -891,10 +976,75 @@ namespace mm::render
             }
             m_frame.vertices.push_back(out);
         }
+    }
+
+    // `count` vertices from `first` drawn with `state`: onto the last batch when it has the same state.
+    void Gs::addToBatch(const DrawState &state, uint32_t first, uint32_t count)
+    {
         if (!m_frame.batches.empty() && m_frame.batches.back().state == state)
-            m_frame.batches.back().count += static_cast<uint32_t>(count);
+            m_frame.batches.back().count += count;
         else
-            m_frame.batches.push_back(Batch{state, first, static_cast<uint32_t>(count)});
+            m_frame.batches.push_back(Batch{state, first, count});
+    }
+
+    // A plain triangle strip from a VU1 program (no register writes between its vertices, each with its colour and
+    // texture coordinates, the queue empty after the packet's PRIM): what vertex by vertex through the queue and kick
+    // would draw, in the same order with the same state, with the state looked up and its batch found once. Leaves the
+    // queue and registers as that would. False (nothing done) for any other packet.
+    bool Gs::vuStrip(const VuPacket &packet)
+    {
+        if ((m_prim & 7) != 4 || m_queued != 0 || m_tintExtras)
+            return false;
+        const size_t n = packet.vertices.size();
+        if (n == 0)
+            return false;
+        for (const VuVertex &in : packet.vertices)
+            if (in.beforeCount != 0 || in.stale || !in.hasSt || !in.hasRgba)
+                return false;
+        m_strip.resize(n);
+        bool drawn = false;
+        for (size_t j = 0; j < n; ++j)
+        {
+            m_strip[j] = makeVertex(packet.vertices[j]);
+            drawn = drawn || (j >= 2 && !packet.vertices[j].adc);
+        }
+        if (drawn)
+        {
+            DrawState state;
+            if (drawStateFor(m_strip.data(), 3, Topology::Triangles, 0, state))
+            {
+                const uint32_t first = static_cast<uint32_t>(m_frame.vertices.size());
+                uint32_t count = 0;
+                for (size_t j = 2; j < n; ++j)
+                    if (!packet.vertices[j].adc)
+                    {
+                        putVertices(&m_strip[j - 2], 3, state);
+                        count += 3;
+                    }
+                addToBatch(state, first, count);
+            }
+        }
+        // the queue and registers as the last vertices left them
+        const VuVertex &last = packet.vertices.back();
+        m_q = last.q;
+        uint32_t rgba, qbits;
+        std::memcpy(&rgba, last.rgba, 4);
+        std::memcpy(&qbits, &m_q, 4);
+        m_rgbaq = rgba | (static_cast<uint64_t>(qbits) << 32);
+        if (n >= 3)
+        {
+            m_queue[0] = m_strip[n - 2];
+            m_queue[1] = m_strip[n - 1];
+            m_queue[2] = m_strip[n - 1];
+            m_queued = 2;
+        }
+        else
+        {
+            for (size_t j = 0; j < n; ++j)
+                m_queue[j] = m_strip[j];
+            m_queued = static_cast<int>(n);
+        }
+        return true;
     }
 
     Frame Gs::takeFrame()
