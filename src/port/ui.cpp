@@ -5455,6 +5455,9 @@ namespace mm
     // The asset loader is stepped in modes 1 to 6 and 8. The result is 0 until a game starts.
     int TitleScene_Update(GuestPtr<TitleScene> scene)
     {
+        // The original's frame: TitleScene_Load's image loaders live on the stack below it and their address goes into the DMA
+        // kick chain (0x1F8100), so it must be where the original has it.
+        port::GuestFrame<0x30> frame;
         const uint32_t s = scene.address;
         DmaList_QueueClearScreen();
         DmaList_QueueClearZ();

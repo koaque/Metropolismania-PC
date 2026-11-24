@@ -23,6 +23,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -647,13 +648,30 @@ namespace
         std::cerr << "[mm] call trace on (MMPC_TRACE_CALLS=1)" << std::endl;
     }
 
+    // MMPC_CARD_DIR=<folder>: the memory card's folder instead of mc0 beside the ELF. tools/pipeline.py gives every test run
+    // and difftest a fresh copy of the card in work/cards/ this way, so a test that saves (or a replay of the game's save code)
+    // never writes into the saves played with. The runtime looks the folder up at each card access, so setting it here,
+    // before the game starts, is enough.
+    void applyCardFolder()
+    {
+        const char *folder = std::getenv("MMPC_CARD_DIR");
+        if (folder == nullptr || folder[0] == '\0')
+            return;
+        PS2Runtime::IoPaths paths = PS2Runtime::getIoPaths();
+        paths.mcRoot = std::filesystem::absolute(std::filesystem::path(folder));
+        PS2Runtime::setIoPaths(paths);
+        std::cerr << "[mm] memory card folder: " << paths.mcRoot.string() << " (MMPC_CARD_DIR)" << std::endl;
+    }
+
     void applyMetropolismaniaOverrides(PS2Runtime &runtime)
     {
+        applyCardFolder(); // first: the difftest's replays below already use the card
         // The readable port (src/port/) first: the debug wrappers below wrap whatever is registered.
         port::install(runtime);
         iop::install(runtime); // the readable port of the IOP modules (PS2X_IOP_NATIVE=0 turns it off)
         port::installCapture(runtime);
         port::installCallCounts(runtime);
+        port::installMovieCheck(runtime);
         port::runDifftestIfRequested(runtime); // exits when MMPC_DIFFTEST is set
         port::runVu1TestIfRequested(); // exits when MMPC_VU1_TEST is set
         vu1aot::install(runtime.vu1()); // pre-timed VU1 programs (PS2X_VU1_AOT=0 turns them off)

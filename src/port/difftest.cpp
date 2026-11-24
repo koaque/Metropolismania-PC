@@ -56,6 +56,16 @@
 // with the same arguments, memory and heap bookkeeping carrying over, and the replay then compares the next call. That is how a
 // function that works in steps over many frames (a scene's briefing) is tested at a step that needs the objects earlier steps made.
 //
+// Scripted waits: the functions that wait for the vertical blank (the movie's display start, clear and resume, Main, MainLoop)
+// cannot be replayed with the runtime's wait, which switches guest threads. Their runs get a stand-in for sceGsSyncV instead: it
+// returns at once with alternating fields (0 first) and counts its calls, which are compared, and timer 0 reads the deterministic
+// values of PS2X_TIMER0=frame from the same state in each run. A record of one of them named stop<N>_... (for example
+// stop31_000.mmdt) ends both runs at the Nth wait and compares memory, the heap and the wait count there (not registers): that is how
+// Main and MainLoop, which never return, are tested over N frames. The stand-in also moves time on to the Nth replay frame at its
+// Nth call, as a real wait idles until the vertical blank (the IOP runs on those cycles, and the recompiled code charges more per
+// frame than the port). Their two runs each get a process of their own (sideChildren: the IOP, the memory card and the RPC layer
+// are not reset between two runs in one process); MainLoop's processes first start the sound driver.
+//
 // Changes: MMPC_DIFFTEST_CHANGES=<names or "all"> prints, for each record of those functions, the RDRAM ranges
 // the original run changed (outside the free stack), and its v0 for functions with an integer result. A record
 // that passes but changes nothing, or not what it was made for (a record edited to reach a rare branch), is not
@@ -514,10 +524,75 @@ namespace port
             std::vector<uint8_t> rdram;
             std::vector<uint8_t> scratchpad;
             std::vector<std::pair<uint32_t, uint32_t>> liveHeap;  // (address, size) of the guest heap blocks in use afterwards
+            uint32_t syncVCalls = 0; // calls of the scripted vsync wait (scriptedWaits), compared too
+            uint32_t overruns = 0;   // of those, the ones reached after the replay frame's time (see syncVStandIn)
+            bool stopped = false;    // ended at the record's stop<N> wait
             bool returned = false;
             bool switched = false;
             std::string fault;
         };
+
+        // Scripted vsync waits. sceGsSyncV is the runtime's vsync wait: the EE scheduler blocks the thread until the next vertical
+        // blank, delivers the interrupts in between and runs the other guest threads, which a replay cannot do (the call switches
+        // threads and the run ends there). For the functions in scriptedWaits() both runs get a stand-in at its address instead: it
+        // returns at once with the field the runtime's wait gives an interlaced display, alternating and starting from field 0 in
+        // every run, and counts its calls. The two runs then see the same waits, and the comparison covers the function's own logic
+        // and how often it waited, not the wait itself (runtime code).
+        // A scripted run also reads the deterministic timer 0 (patch 0154, PS2X_TIMER0=frame) from the same state each time (the
+        // game takes the count as a random number), and a record named stop<N>_... ends both runs at the Nth wait: the stand-in
+        // throws ReplayStop there, which unwinds the generated and the ported frames alike (the replay runs them on the harness's
+        // own stack), and the two runs are compared at that point. That is how the functions that never return (Main, MainLoop)
+        // are tested over N frames. Registers are not compared after a stop, only memory, the heap and the wait count.
+        struct ReplayStop
+        {
+        };
+        int g_syncVField = 0;
+        uint32_t g_syncVCalls = 0;
+        uint32_t g_syncVStopAt = 0; // 0: never
+        bool g_scriptedRun = false;
+        // Time. The IOP runs on the EE cycles the code charges (EeScheduler::accountCycles), and the recompiled code charges far
+        // more per frame than the port; a real vsync wait idles until the vertical blank, which evens that out. So the stand-in
+        // moves time on to the Nth replay frame after the run's start at its Nth call (MMPC_DIFFTEST_FRAME_CYCLES, default one
+        // NTSC field): both runs then give the IOP the same time per frame. A frame whose own cycles pass that point (an
+        // overrun) leaves the two runs' clocks apart; the overruns are counted and shown with a failing record.
+        uint64_t g_syncVStartCycle = 0;
+        uint32_t g_syncVOverruns = 0;
+
+        uint64_t replayFrameCycles()
+        {
+            static const uint64_t cycles = [] {
+                const char *value = std::getenv("MMPC_DIFFTEST_FRAME_CYCLES");
+                return value != nullptr && value[0] != '\0' ? std::strtoull(value, nullptr, 0) : EeScheduler::kEeClockHz * 1001ull / 60000ull;
+            }();
+            return cycles;
+        }
+
+        void syncVStandIn(uint8_t *, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            ctx->pc = static_cast<uint32_t>(gpr64(ctx, 31));
+            setGpr64(ctx, 2, static_cast<uint64_t>(g_syncVField));
+            g_syncVField ^= 1;
+            ++g_syncVCalls;
+            EeScheduler &ee = runtime->eeScheduler();
+            const uint64_t target = g_syncVStartCycle + static_cast<uint64_t>(g_syncVCalls) * replayFrameCycles();
+            uint64_t now = ee.cycleCount();
+            if (now > target)
+                ++g_syncVOverruns;
+            while (now < target)
+            {
+                const uint32_t step = static_cast<uint32_t>(std::min<uint64_t>(target - now, 1u << 20));
+                ee.accountCycles(step);
+                now += step;
+            }
+            if (g_syncVCalls == g_syncVStopAt)
+                throw ReplayStop{};
+        }
+
+        const std::set<std::string> &scriptedWaits()
+        {
+            static const std::set<std::string> names = {"Movie_DisplayStart", "Movie_ClearScreen", "Movie_ResumeAll", "MainLoop", "Main"};
+            return names;
+        }
 
         // The heap bookkeeping every record starts from (the state when the first replay began).
         const PS2Runtime::GuestHeapState &baseHeapState(PS2Runtime &runtime)
@@ -540,6 +615,13 @@ namespace port
             if (rec.hasFiles)
                 restoreFiles(runtime, rec, baseDescriptor);
             runtime.memory().restoreEeTimers(baseTimers);
+            static const PS2Memory::DeterministicTimer0State baseTimer0 = PS2Memory::saveDeterministicTimer0();
+            PS2Memory::restoreDeterministicTimer0(g_scriptedRun ? PS2Memory::DeterministicTimer0State{true, 0u, 0u} : baseTimer0);
+            g_syncVField = 0;
+            g_syncVCalls = 0;
+            g_syncVOverruns = 0;
+            g_syncVStartCycle = runtime.eeScheduler().cycleCount();
+            out.stopped = false;
             std::memcpy(g_rdram, rec.rdram.data(), PS2_RAM_SIZE);
             std::memcpy(g_scratchpad, rec.scratchpad.data(), PS2_SCRATCHPAD_SIZE);
             out.ctx = start;
@@ -559,13 +641,19 @@ namespace port
             {
                 out.fault = e.what();
             }
+            catch (const ReplayStop &)
+            {
+                out.stopped = true;
+            }
             runtime.eeScheduler().leaveNoPreempt();
+            out.syncVCalls = g_syncVCalls;
+            out.overruns = g_syncVOverruns;
             out.liveHeap.clear();
             for (const PS2Runtime::GuestHeapBlock &block : runtime.saveGuestHeapState().blocks)
                 if (!block.free)
                     out.liveHeap.emplace_back(block.addr, block.size);
             std::sort(out.liveHeap.begin(), out.liveHeap.end());
-            out.returned = !out.switched && out.fault.empty() && (out.ctx.pc == kReturnSentinel || out.ctx.pc == address);
+            out.returned = !out.switched && out.fault.empty() && (out.stopped || out.ctx.pc == kReturnSentinel || out.ctx.pc == address);
             out.rdram.assign(g_rdram, g_rdram + PS2_RAM_SIZE);
             out.scratchpad.assign(g_scratchpad, g_scratchpad + PS2_SCRATCHPAD_SIZE);
         }
@@ -631,7 +719,8 @@ namespace port
         // starts the driver (startSoundDriver), so their RPC reaches it as in the game rather than finding no server.
         const std::set<std::string> &afterSoundInit()
         {
-            static const std::set<std::string> names = {"Sound_Shutdown", "App_dtor"};
+            // MainLoop too: its record is taken at boot with the driver running, and its frames send the sound commands.
+            static const std::set<std::string> names = {"Sound_Shutdown", "App_dtor", "MainLoop"};
             return names;
         }
 
@@ -668,6 +757,7 @@ namespace port
         std::vector<std::string> compare(const Ported &p, const Record &rec, const Outcome &a, const Outcome &b)
         {
             std::vector<std::string> diffs;
+            const std::string fn = p.name; // compared as text (p.name is a const char *)
             auto hex = [](uint64_t v)
             {
                 char text[24];
@@ -681,16 +771,22 @@ namespace port
             if (!a.returned || !b.returned)
                 diffs.push_back(std::string("did not return: original ") + (a.returned ? "returned" : a.switched ? "switched thread" : "stopped at pc " + hex(a.ctx.pc)) +
                                 ", ported " + (b.returned ? "returned" : b.switched ? "switched thread" : "stopped at pc " + hex(b.ctx.pc)));
-            if (p.result == ResultKind::Int && gpr64(&a.ctx, 2) != gpr64(&b.ctx, 2))
+            if (a.syncVCalls != b.syncVCalls)
+                diffs.push_back("sceGsSyncV calls: " + std::to_string(a.syncVCalls) + " vs " + std::to_string(b.syncVCalls));
+            if (a.stopped != b.stopped)
+                diffs.push_back(std::string("stopped at the record's wait: original ") + (a.stopped ? "yes" : "no") + ", ported " + (b.stopped ? "yes" : "no"));
+            // Both runs stopped in the middle of the function (stop<N> records): its registers hold whatever each was doing there.
+            const bool midCall = a.stopped && b.stopped;
+            if (!midCall && p.result == ResultKind::Int && gpr64(&a.ctx, 2) != gpr64(&b.ctx, 2))
                 diffs.push_back("v0: " + hex(gpr64(&a.ctx, 2)) + " vs " + hex(gpr64(&b.ctx, 2)));
-            if (p.result == ResultKind::Float && std::memcmp(&a.ctx.f[0], &b.ctx.f[0], 4) != 0)
+            if (!midCall && p.result == ResultKind::Float && std::memcmp(&a.ctx.f[0], &b.ctx.f[0], 4) != 0)
                 diffs.push_back("f0: " + std::to_string(a.ctx.f[0]) + " vs " + std::to_string(b.ctx.f[0]));
             static const int kSaved[] = {16, 17, 18, 19, 20, 21, 22, 23, 28, 29, 30, 31};
             for (int reg : kSaved)
-                if (!sameReg(a.ctx, b.ctx, reg))
+                if (!midCall && !sameReg(a.ctx, b.ctx, reg))
                     diffs.push_back("r" + std::to_string(reg) + ": " + hex(gpr64(&a.ctx, reg)) + " vs " + hex(gpr64(&b.ctx, reg)));
             for (int f = 20; f < 32; ++f)
-                if (std::memcmp(&a.ctx.f[f], &b.ctx.f[f], 4) != 0)
+                if (!midCall && std::memcmp(&a.ctx.f[f], &b.ctx.f[f], 4) != 0)
                     diffs.push_back("f" + std::to_string(f) + " differs");
             // VU0 registers carry over from one function to the next: some code reads lanes it never wrote (the w
             // of vf6 in mm_Math_TriangleNormal, all of vf12 in mm_BldgField_Draw), so a port leaves them as the
@@ -707,7 +803,7 @@ namespace port
             // other register or byte.
             static const std::set<std::string> kVu0FromLeftovers = {"TalkPersonFar_ctor", "TalkPersonNear_ctor", "Person_ChooseDestination", "CityCursor_Update",
                                                                     "Person_Update"};
-            const bool vu0Compared = kVu0FromLeftovers.count(p.name) == 0;
+            const bool vu0Compared = kVu0FromLeftovers.count(p.name) == 0 && !midCall;
             // Narrower: only vf4's x for functions whose last VU0 work is the square root of a schedule's spread
             // (Math_SqrtBits, inlined in Schedule_MemberActivity): it converts a 16-byte stack slot of which only x is
             // written, so vf4's y, z and w are what lay on the stack there. In a deeper call that is what the generated
@@ -730,22 +826,22 @@ namespace port
             // the IOP's allocator is not reset between the two runs either.
             uint32_t ignoreLow = 0, ignoreHigh = 0, ignoreLow2 = 0, ignoreHigh2 = 0, ignoreLow3 = 0, ignoreHigh3 = 0;
             const uint32_t object = static_cast<uint32_t>(gpr64(&rec.ctx, 4));
-            if (p.name == "Movie_ViBufCreate")
+            if (fn == "Movie_ViBufCreate")
                 ignoreLow = (object + 0x40u) & PS2_RAM_MASK;
-            else if (p.name == "Movie_VideoDecCreate")
+            else if (fn == "Movie_VideoDecCreate")
                 ignoreLow = (object + 0x88u) & PS2_RAM_MASK;
-            else if (p.name == "Movie_AudioDecCreate")
+            else if (fn == "Movie_AudioDecCreate")
             {
                 ignoreLow = (object + 0x44u) & PS2_RAM_MASK;
                 ignoreLow2 = (object + 0x58u) & PS2_RAM_MASK;
                 ignoreHigh2 = ignoreLow2 + 4u;
             }
-            else if (p.name == "Movie_StrFileOpen")
+            else if (fn == "Movie_StrFileOpen")
                 ignoreLow = (object + 0x2Cu) & PS2_RAM_MASK;
             // Sound_Init (and App_ctor, which calls it) binds the sound driver's RPC client: the runtime numbers the binds (the client's
             // id at +4) and keeps the server descriptor it made on the first bind (its sid at 0x1F10000) outside the replay's reset, so the
             // ported run sees them differ.
-            else if (p.name == "Sound_Init" || p.name == "App_ctor")
+            else if (fn == "Sound_Init" || fn == "App_ctor" || fn == "Main")
             {
                 ignoreLow = 0x001FE694u;
                 ignoreLow2 = 0x01F10000u;
@@ -753,7 +849,7 @@ namespace port
             }
             // supplement_crt0 (and _InitSys, which calls it) makes two semaphores and keeps their ids at 0x1AC494 and 0x1AC498: the kernel
             // numbers them up and the replay does not reset it, so the ported run gets the next two ids.
-            else if (p.name == "sdk_supplement_crt0" || p.name == "sdk_InitSys")
+            else if (fn == "sdk_supplement_crt0" || fn == "sdk_InitSys")
             {
                 ignoreLow = 0x001AC494u;
                 ignoreLow2 = 0x001AC498u;
@@ -761,7 +857,7 @@ namespace port
             }
             // McManager_NewSaveName writes the console clock in seconds as digits: the two runs read it a moment apart, so the last
             // digits (bytes 16 to 23 of the name slot, which holds eight digits after the id string) are not compared.
-            else if (p.name == "McManager_NewSaveName")
+            else if (fn == "McManager_NewSaveName")
             {
                 const uint32_t name = (0x001F3CF0u + (static_cast<uint32_t>(gpr64(&rec.ctx, 5)) & 0xFFu) * 0x20u) & PS2_RAM_MASK;
                 ignoreLow = name + 0x10u;
@@ -772,7 +868,7 @@ namespace port
             // descriptor counter (kept outside RDRAM and not reset between the two runs) gives the ported run the next number, which the game
             // keeps in three words: 0x1BDCDC, and the first argument of the write and the close it queues in the two card queue slots after
             // the open's (64 slots of 0x24 bytes at 0x1F5CF0; the open goes in at the queue's tail, the word at 0x1BDCD4).
-            else if (p.name == "McSave_WriteIconSys" || p.name == "PauseMenu_StateSave" || p.name == "SaveFile_WriteIconSys")
+            else if (fn == "McSave_WriteIconSys" || fn == "PauseMenu_StateSave" || fn == "SaveFile_WriteIconSys")
             {
                 uint32_t tail = 0;
                 std::memcpy(&tail, rec.rdram.data() + 0x001BDCD4u, sizeof(tail));
@@ -787,7 +883,15 @@ namespace port
                 ignoreHigh = ignoreLow + 4u;
             // The pause menu's save slot list (and the new slot it prepares) names a new save for the first free slot of each card, with
             // the clock digits NewSaveName writes: the clock's tick between the two runs changes the last digit of any of the 16 names.
-            const bool newSaveNames = p.name == "PauseMenu_Update" || p.name == "PauseMenu_StateSlotSelect" || p.name == "McManager_PrepareNewSlot";
+            const bool newSaveNames = fn == "PauseMenu_Update" || fn == "PauseMenu_StateSlotSelect" || fn == "McManager_PrepareNewSlot";
+            // The card scan's last directory entry (a CardDirEntry at 0x1F4300): the runtime gives a folder's "." and ".." entries the host
+            // clock's time at the call (sceMcGetDir), which ticks between the two runs. A scan of an empty card ends on one (the second slot
+            // of a test copy of the card), so the entry's two times (+0x00 to +0x0F) are not compared when both runs end on one.
+            const auto dotEntry = [](const Outcome &o) {
+                const uint8_t *name = o.rdram.data() + 0x001F4320u;
+                return name[0] == '.' && (name[1] == 0 || (name[1] == '.' && name[2] == 0));
+            };
+            const bool scanEntryClock = dotEntry(a) && dotEntry(b);
             // MMPC_DIFFTEST_IGNORE=<hex address>:<bytes>,... leaves those ranges out of the comparison (to check that nothing else differs).
             static const std::vector<std::pair<uint32_t, uint32_t>> extraIgnored = [] {
                 std::vector<std::pair<uint32_t, uint32_t>> out;
@@ -806,12 +910,12 @@ namespace port
             // generated code it looks like a saved register (GameUpdate's records show the app pointer and a code address), under the port the
             // old content, since a ported function writes no register spills for the frames below it to read. The slots look like padding;
             // nothing else differs.
-            const bool playerSlots = p.name == "CityScene_Update" || p.name == "GameUpdate";
+            const bool playerSlots = fn == "CityScene_Update" || fn == "GameUpdate";
             // sceSdRemote copies all six argument registers into its argument buffer, the unused ones too: a caller that passes fewer
             // leaves whatever its registers held (the recompiled callee's own leftovers, which a native callee does not leave), so
             // arguments 3 to 5 (the words at +0x10 to +0x1B) differ in every function that calls it. Nothing reads them; the sound
             // driver ignores the arguments a command does not use. sdk_sceSdRemote's own records pass all six.
-            const bool sdRemoteLeftovers = p.name != "sdk_sceSdRemote";
+            const bool sdRemoteLeftovers = fn != "sdk_sceSdRemote";
             const auto same = [&](uint32_t k) {
                 if (sdRemoteLeftovers && k >= 0x001C3510u && k < 0x001C351Cu)
                     return true;
@@ -822,6 +926,8 @@ namespace port
                                     (k >= 0x0088BDF0u && k < 0x0088BE00u) || (k >= 0x0088C010u && k < 0x0088C020u)))
                     return true;
                 if (newSaveNames && k >= 0x001F3CF0u && k < 0x001F3CF0u + 0x200u && ((k - 0x001F3CF0u) & 0x1Fu) >= 0x10u && ((k - 0x001F3CF0u) & 0x1Fu) < 0x18u)
+                    return true;
+                if (scanEntryClock && k >= 0x001F4300u && k < 0x001F4310u)
                     return true;
                 return a.rdram[k] == b.rdram[k] || (k >= ignoreLow && k < ignoreHigh) || (k >= ignoreLow2 && k < ignoreHigh2) ||
                        (k >= ignoreLow3 && k < ignoreHigh3);
@@ -901,7 +1007,75 @@ namespace port
                     line += "; only port " + hex(onlyPorted[k].first) + "+" + hex(onlyPorted[k].second);
                 diffs.push_back(line);
             }
+            if (!diffs.empty() && (a.overruns != 0 || b.overruns != 0))
+                diffs.push_back("note: waits reached after the replay frame's time: original " + std::to_string(a.overruns) + ", port " +
+                                std::to_string(b.overruns) + " (MMPC_DIFFTEST_FRAME_CYCLES)");
             return diffs;
+        }
+
+        // A run's outcome as a file, for the functions whose two runs each get a process of their own (sideChildren): the child
+        // writes it, the parent reads both and compares.
+        constexpr char kOutcomeMagic[4] = {'M', 'M', 'O', 'C'};
+
+        bool writeOutcome(const std::filesystem::path &path, const Outcome &out)
+        {
+            std::ofstream file(path, std::ios::binary);
+            const uint32_t counts[6] = {out.syncVCalls, out.overruns, static_cast<uint32_t>(out.liveHeap.size()),
+                                        static_cast<uint32_t>(out.fault.size()),
+                                        (out.returned ? 1u : 0u) | (out.switched ? 2u : 0u) | (out.stopped ? 4u : 0u),
+                                        static_cast<uint32_t>(sizeof(R5900Context))};
+            file.write(kOutcomeMagic, 4);
+            file.write(reinterpret_cast<const char *>(counts), sizeof(counts));
+            file.write(reinterpret_cast<const char *>(&out.ctx), sizeof(R5900Context));
+            file.write(reinterpret_cast<const char *>(out.rdram.data()), static_cast<std::streamsize>(out.rdram.size()));
+            file.write(reinterpret_cast<const char *>(out.scratchpad.data()), static_cast<std::streamsize>(out.scratchpad.size()));
+            for (const auto &block : out.liveHeap)
+            {
+                const uint32_t words[2] = {block.first, block.second};
+                file.write(reinterpret_cast<const char *>(words), sizeof(words));
+            }
+            file.write(out.fault.data(), static_cast<std::streamsize>(out.fault.size()));
+            return static_cast<bool>(file);
+        }
+
+        bool readOutcome(const std::filesystem::path &path, Outcome &out)
+        {
+            std::ifstream file(path, std::ios::binary);
+            char magic[4];
+            uint32_t counts[6];
+            if (!file.read(magic, 4) || std::memcmp(magic, kOutcomeMagic, 4) != 0 || !file.read(reinterpret_cast<char *>(counts), sizeof(counts)) ||
+                counts[5] != sizeof(R5900Context) || counts[2] > (1u << 20) || counts[3] > 4096)
+                return false;
+            out.syncVCalls = counts[0];
+            out.overruns = counts[1];
+            out.returned = (counts[4] & 1u) != 0;
+            out.switched = (counts[4] & 2u) != 0;
+            out.stopped = (counts[4] & 4u) != 0;
+            out.rdram.resize(PS2_RAM_SIZE);
+            out.scratchpad.resize(PS2_SCRATCHPAD_SIZE);
+            file.read(reinterpret_cast<char *>(&out.ctx), sizeof(R5900Context));
+            file.read(reinterpret_cast<char *>(out.rdram.data()), PS2_RAM_SIZE);
+            file.read(reinterpret_cast<char *>(out.scratchpad.data()), PS2_SCRATCHPAD_SIZE);
+            out.liveHeap.resize(counts[2]);
+            for (auto &block : out.liveHeap)
+            {
+                uint32_t words[2];
+                file.read(reinterpret_cast<char *>(words), sizeof(words));
+                block = {words[0], words[1]};
+            }
+            out.fault.resize(counts[3]);
+            file.read(out.fault.data(), counts[3]);
+            return static_cast<bool>(file);
+        }
+
+        // Main and MainLoop run many frames with the IOP, the memory card and the RPC layer alive, and the replay resets none of
+        // these between two runs in one process (the port run would find the files the original opened, the sound commands it
+        // left queued). Each of their runs is a child process of its own, which starts the same way (MainLoop's child first
+        // starts the sound driver, as for afterSoundInit).
+        const std::set<std::string> &sideChildren()
+        {
+            static const std::set<std::string> names = {"Main", "MainLoop"};
+            return names;
         }
     }
 
@@ -1585,6 +1759,73 @@ namespace port
         std::cerr << "[difftest] counting entries of " << wrapped << " generated functions' addresses into " << path.string() << std::endl;
     }
 
+    // ---------------------------------------------------------------- movie picture check
+    // MMPC_MOVIE_CHECK=1: a live check of the movie decoder group (Movie_PlayPss, Movie_InitAll, Movie_VideoDecMain,
+    // Movie_DecodeLoop, PlayOpeningMovie), which the difftest cannot replay: two guest threads and the vblank interrupt interleave
+    // by time, and native code charges other cycles than the recompiled code, so two runs interleave differently. The decode loop
+    // hands each picture's slot to sceMpegGetPicture and then, once it has counted the picture into the output queue, calls
+    // sceMpegIsEnd; the recompiled loop and the ported one both call them through the function table. At each sceMpegIsEnd after a
+    // sceMpegGetPicture the picture is logged as one line: its number in the run, the decoder's frame number, the slot, a hash of
+    // the slot's pixels and the subtitle state (the next subtitle and a hash of the subtitle packet). The vblank handler only reads
+    // these, so they do not depend on timing: a run with every port off (MMPC_PORT_DISABLE=all) and one with the ports must log the
+    // same lines (tools/movie_check_cmp.py). What depends on timing (which vblank shows a picture, the miss counter, the
+    // fade overlay's steps) is not compared.
+    namespace
+    {
+        GuestFn g_movieGetPicture = nullptr;
+        GuestFn g_movieIsEnd = nullptr;
+        uint32_t g_moviePendingSlot = 0, g_moviePendingBlocks = 0, g_moviePictures = 0;
+
+        uint64_t hashGuest(const uint8_t *rdram, uint32_t address, uint32_t bytes)
+        {
+            uint64_t h = 0xCBF29CE484222325ull;
+            for (uint32_t i = 0; i < bytes; ++i)
+                h = (h ^ rdram[(address + i) & PS2_RAM_MASK]) * 0x100000001B3ull;
+            return h;
+        }
+
+        void movieGetPictureEntry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            // sceMpegGetPicture(mpeg, slot, macroblocks): RGB32 macroblocks of 16 x 16 pixels, 1 KB each. It may wait for the picture
+            // (the call then ends in a thread switch), so the slot is hashed at the next sceMpegIsEnd.
+            g_moviePendingSlot = static_cast<uint32_t>(gpr64(ctx, 5));
+            g_moviePendingBlocks = static_cast<uint32_t>(gpr64(ctx, 6));
+            g_movieGetPicture(rdram, ctx, runtime);
+        }
+
+        void movieIsEndEntry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            constexpr uint32_t kSubtitleNext = 0x001BD9ECu, kSubtitlePacket = 0x0020C1A0u, kSubtitleEnd = 0x00215F01u;
+            if (g_moviePendingSlot != 0u)
+            {
+                const uint32_t videoDec = static_cast<uint32_t>(gpr64(ctx, 4));
+                int32_t frame = 0, subtitle = 0;
+                std::memcpy(&frame, rdram + ((videoDec + 8u) & PS2_RAM_MASK), 4);
+                std::memcpy(&subtitle, rdram + (kSubtitleNext & PS2_RAM_MASK), 4);
+                const uint64_t image = hashGuest(rdram, g_moviePendingSlot, std::min(g_moviePendingBlocks, 0x2000u) * 0x400u);
+                const uint64_t packet = hashGuest(rdram, kSubtitlePacket, kSubtitleEnd - kSubtitlePacket);
+                char line[160];
+                std::snprintf(line, sizeof(line), "[movie] picture %u frame %d slot %08X blocks %u image %016llX subtitle %d %016llX\n",
+                              g_moviePictures++, frame, g_moviePendingSlot, g_moviePendingBlocks, static_cast<unsigned long long>(image),
+                              subtitle, static_cast<unsigned long long>(packet));
+                std::fputs(line, stderr);
+                g_moviePendingSlot = 0;
+            }
+            g_movieIsEnd(rdram, ctx, runtime);
+        }
+    }
+
+    void installMovieCheck(PS2Runtime &runtime)
+    {
+        if (env("MMPC_MOVIE_CHECK") == nullptr)
+            return;
+        g_movieGetPicture = runtime.lookupFunction(mm::sdk::addr::sceMpegGetPicture);
+        g_movieIsEnd = runtime.lookupFunction(mm::sdk::addr::sceMpegIsEnd);
+        runtime.registerFunction(mm::sdk::addr::sceMpegGetPicture, movieGetPictureEntry);
+        runtime.registerFunction(mm::sdk::addr::sceMpegIsEnd, movieIsEndEntry);
+        std::cerr << "[difftest] movie check on: each decoded picture is logged as a [movie] line" << std::endl;
+    }
+
     bool captureRequested() { return env("MMPC_CAPTURE") != nullptr; }
 
     void installCapture(PS2Runtime &runtime)
@@ -1697,6 +1938,7 @@ namespace port
             std::mutex mutex;
             std::string what;
             std::chrono::steady_clock::time_point since;
+            int extraSeconds = 0; // on top of the limit, for this replay
             bool active = false;
         };
         static Watch watch;
@@ -1706,9 +1948,10 @@ namespace port
             {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 std::lock_guard<std::mutex> lock(watch.mutex);
-                if (watch.active && std::chrono::steady_clock::now() - watch.since > std::chrono::seconds(hangSeconds))
+                const int limit = hangSeconds + watch.extraSeconds;
+                if (watch.active && std::chrono::steady_clock::now() - watch.since > std::chrono::seconds(limit))
                 {
-                    std::cout << "[difftest] HANG " << watch.what << " (no return within " << hangSeconds << " s)" << std::endl;
+                    std::cout << "[difftest] HANG " << watch.what << " (no return within " << limit << " s)" << std::endl;
                     std::cout.flush();
                     std::_Exit(124);
                 }
@@ -1718,6 +1961,9 @@ namespace port
             std::lock_guard<std::mutex> lock(watch.mutex);
             watch.what = what;
             watch.since = std::chrono::steady_clock::now();
+            // A stop<N> record replays N frames from boot, about 150 a second on an idle machine (3,001 take some 20 s), which a
+            // short limit (the full run's 15 s) cuts off: it gets a second more for every 50 frames.
+            watch.extraSeconds = static_cast<int>(g_syncVStopAt / 50u);
             watch.active = true;
         };
         const auto watchStop = [] {
@@ -1758,6 +2004,54 @@ namespace port
                           results.size() > 2 ? ",\n" : "", p.address, p.name, count, bad, count > 0 && bad == 0 ? "true" : "false");
             results += line;
         };
+        // A record's two outcomes: the changes listing when asked for, the comparison and the FAIL lines. True when they agree.
+        const auto judge = [&](const Ported &p, const std::filesystem::path &file, const Record &rec, const Outcome &original, const Outcome &portedRun) {
+            const std::vector<std::string> diffs = compare(p, rec, original, portedRun);
+            if (changesAll || changeNames.count(p.name) != 0)
+            {
+                std::cout << "[difftest] " << p.name << " " << file.filename().string() << " changes " << describeChanges(rec, original);
+                if (p.result == ResultKind::Int)
+                {
+                    char v0[32];
+                    std::snprintf(v0, sizeof(v0), "; v0 %llX", static_cast<unsigned long long>(gpr64(&original.ctx, 2)));
+                    std::cout << v0;
+                }
+                std::cout << std::endl;
+            }
+            if (!diffs.empty())
+            {
+                std::cout << "[difftest] FAIL " << p.name << " " << file.filename().string() << std::endl;
+                for (const std::string &d : diffs)
+                    std::cout << "    " << d << std::endl;
+            }
+            // MMPC_DIFFTEST_SHOW=<hex address>:<words>,...: those words of both runs' end states for every record, passing or not
+            // (where a long run got to: a scene's state word), without counting them as a difference.
+            if (const char *show = env("MMPC_DIFFTEST_SHOW"))
+                for (const std::string &item : splitList(show))
+                {
+                    unsigned long address = 0, words = 0;
+                    if (std::sscanf(item.c_str(), "%lx:%lu", &address, &words) != 2)
+                        continue;
+                    std::string line = "[difftest] " + std::string(p.name) + " " + file.filename().string() + " show";
+                    for (unsigned long k = 0; k < words; ++k)
+                    {
+                        uint32_t a = 0, b = 0;
+                        std::memcpy(&a, &original.rdram[(address + 4 * k) & PS2_RAM_MASK], 4);
+                        std::memcpy(&b, &portedRun.rdram[(address + 4 * k) & PS2_RAM_MASK], 4);
+                        char text[40];
+                        if (a == b)
+                            std::snprintf(text, sizeof(text), " %lx:%x", address + 4 * k, a);
+                        else
+                            std::snprintf(text, sizeof(text), " %lx:%x/%x", address + 4 * k, a, b);
+                        line += text;
+                    }
+                    std::cout << line << std::endl;
+                }
+            return diffs.empty();
+        };
+        // A child of sideChildren: MMPC_DIFFTEST_SIDE=original|port, MMPC_DIFFTEST_RECORD=<file name>, MMPC_DIFFTEST_OUTCOME=<file>.
+        const char *sideOnly = childReplay ? env("MMPC_DIFFTEST_SIDE") : nullptr;
+        const char *recordOnly = childReplay ? env("MMPC_DIFFTEST_RECORD") : nullptr;
         for (const Ported &p : ported())
         {
             if (!onlyNames.empty() && onlyNames.count(p.name) == 0)
@@ -1774,6 +2068,9 @@ namespace port
             if (p.name == resumeFunction)
                 files.erase(std::remove_if(files.begin(), files.end(), [&](const std::filesystem::path &f) { return f.filename().string() < resumeFile; }),
                             files.end());
+            if (recordOnly != nullptr)
+                files.erase(std::remove_if(files.begin(), files.end(), [&](const std::filesystem::path &f) { return f.filename().string() != recordOnly; }),
+                            files.end());
             if (files.empty())
             {
                 ++untested;
@@ -1782,6 +2079,56 @@ namespace port
                 continue;
             }
             ++functions;
+            // sideChildren: each record's two runs in two child processes, compared here.
+            if (!childReplay && sideChildren().count(p.name) != 0)
+            {
+                const std::filesystem::path outcomes = std::filesystem::temp_directory_path() / "mmpc_difftest_outcomes";
+                std::error_code ec;
+                std::filesystem::create_directories(outcomes, ec);
+                size_t ok = 0;
+                const size_t failedBefore = failed;
+                for (const auto &file : files)
+                {
+                    ++records;
+                    Record rec;
+                    std::string error;
+                    if (!readRecord(file, rec, error))
+                    {
+                        ++failed;
+                        std::cout << "[difftest] " << p.name << " " << file.filename().string() << ": " << error << std::endl;
+                        continue;
+                    }
+                    Outcome runs[2];
+                    bool read[2] = {};
+                    int codes[2] = {};
+                    for (int side = 0; side < 2; ++side)
+                    {
+                        const char *sideName = side == 0 ? "original" : "port";
+                        const std::filesystem::path path = outcomes / (std::string(p.name) + "." + sideName + ".outcome");
+                        std::filesystem::remove(path, ec);
+                        codes[side] = replayInChildProcess(p.name, {{"MMPC_DIFFTEST_SIDE", sideName},
+                                                                    {"MMPC_DIFFTEST_RECORD", file.filename().string()},
+                                                                    {"MMPC_DIFFTEST_OUTCOME", path.string()}});
+                        read[side] = readOutcome(path, runs[side]);
+                        std::filesystem::remove(path, ec);
+                    }
+                    if (!read[0] || !read[1])
+                    {
+                        ++failed;
+                        std::cout << "[difftest] FAIL " << p.name << " " << file.filename().string() << ": no outcome from the "
+                                  << (!read[0] ? "original" : "port") << " run's process (exit codes " << codes[0] << ", " << codes[1] << ")"
+                                  << std::endl;
+                        continue;
+                    }
+                    if (judge(p, file, rec, runs[0], runs[1]))
+                        ++ok;
+                    else
+                        ++failed;
+                }
+                std::cout << "[difftest] " << p.name << ": " << ok << "/" << files.size() << " exact (each run in a process of its own)" << std::endl;
+                addResult(p, files.size(), failed - failedBefore);
+                continue;
+            }
             // The functions that load the sound driver's IOP modules (App_ctor through Sound_Init) are replayed in a child process of
             // their own: the replay does not reset the IOP, and every load takes new room in its module arena (the loaded modules'
             // threads and RPC servers stay too), so after a few runs the loads fail and the game retries them forever. A child starts
@@ -1801,6 +2148,12 @@ namespace port
             if (childReplay && afterSoundInit().count(p.name) != 0 && !startSoundDriver(runtime, dir))
                 std::cout << "[difftest] " << p.name << ": the sound driver could not be started (no Sound_Init record that returns)"
                           << std::endl;
+            // The scripted vsync wait (scriptedWaits) for this function's runs; useGenerated leaves it alone (not a ported address).
+            const bool scripted = scriptedWaits().count(p.name) != 0;
+            const GuestFn realSyncV = scripted ? runtime.lookupFunction(mm::sdk::addr::sceGsSyncV) : nullptr;
+            if (scripted)
+                runtime.registerFunction(mm::sdk::addr::sceGsSyncV, syncVStandIn);
+            g_scriptedRun = scripted;
             size_t ok = 0, fuzzRuns = 0, fuzzOk = 0, fuzzReported = 0;
             const size_t failedBefore = failed;
             const bool fuzzThis = fuzzCount > 0 && p.mutate && (fuzzAll || fuzzNames.count(p.name) != 0);
@@ -1818,6 +2171,11 @@ namespace port
                 // The original run uses generated code throughout, the ported run ported code wherever it
                 // exists, so a ported callee cannot hide a difference in its caller.
                 Outcome original, portedRun;
+                // A scripted function's record named stop<N>_... ends both runs at the Nth vsync wait (see ReplayStop).
+                {
+                    const std::string recordName = file.filename().string();
+                    g_syncVStopAt = scripted && recordName.rfind("stop", 0) == 0 ? static_cast<uint32_t>(std::strtoul(recordName.c_str() + 4, nullptr, 10)) : 0u;
+                }
                 watchStart(std::string(p.name) + " " + file.filename().string());
                 // A record named warm<N>_... is first advanced by N calls of the original with its arguments: the state a function that
                 // works in steps over many frames reaches by itself (memory and heap bookkeeping carry over from call to call).
@@ -1837,6 +2195,20 @@ namespace port
                             keepFiles(runtime, rec);
                     }
                 }
+                // A child of sideChildren runs one side only (MMPC_DIFFTEST_SIDE) and leaves its outcome for the parent to compare.
+                if (sideOnly != nullptr)
+                {
+                    const bool port = std::strcmp(sideOnly, "port") == 0;
+                    Outcome run;
+                    watchStart(std::string(p.name) + " " + file.filename().string() + (port ? " (port)" : " (original)"));
+                    useGenerated(runtime, !port);
+                    runOnce(runtime, port ? p.wrapper : p.original, p.address, rec, rec.ctx, run, heap);
+                    watchStop();
+                    const char *outcomePath = env("MMPC_DIFFTEST_OUTCOME");
+                    if (outcomePath == nullptr || !writeOutcome(outcomePath, run))
+                        ++failed;
+                    continue;
+                }
                 // Each run is watched on its own, so a HANG line says which one did not return.
                 watchStart(std::string(p.name) + " " + file.filename().string() + " (original)");
                 useGenerated(runtime, true);
@@ -1853,28 +2225,10 @@ namespace port
                 useGenerated(runtime, false);
                 runOnce(runtime, p.wrapper, p.address, rec, rec.ctx, portedRun, heap);
                 watchStop();
-                const std::vector<std::string> diffs = compare(p, rec, original, portedRun);
-                if (changesAll || changeNames.count(p.name) != 0)
-                {
-                    std::cout << "[difftest] " << p.name << " " << file.filename().string() << " changes "
-                              << describeChanges(rec, original);
-                    if (p.result == ResultKind::Int)
-                    {
-                        char v0[32];
-                        std::snprintf(v0, sizeof(v0), "; v0 %llX", static_cast<unsigned long long>(gpr64(&original.ctx, 2)));
-                        std::cout << v0;
-                    }
-                    std::cout << std::endl;
-                }
-                if (diffs.empty())
+                if (judge(p, file, rec, original, portedRun))
                     ++ok;
                 else
-                {
                     ++failed;
-                    std::cout << "[difftest] FAIL " << p.name << " " << file.filename().string() << std::endl;
-                    for (const std::string &d : diffs)
-                        std::cout << "    " << d << std::endl;
-                }
 
                 // Fuzzing: the same record with other float and integer arguments (pointers unchanged).
                 for (int variant = 0; fuzzThis && variant < fuzzCount; ++variant)
@@ -1911,6 +2265,12 @@ namespace port
                     }
                 }
             }
+            if (scripted)
+                runtime.registerFunction(mm::sdk::addr::sceGsSyncV, realSyncV);
+            g_scriptedRun = false;
+            g_syncVStopAt = 0;
+            if (sideOnly != nullptr) // one run of one record, for the parent to compare
+                continue;
             std::cout << "[difftest] " << p.name << ": " << ok << "/" << files.size() << " exact";
             if (fuzzThis)
                 std::cout << ", fuzzed " << fuzzOk << "/" << fuzzRuns << " exact";

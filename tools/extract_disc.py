@@ -134,6 +134,8 @@ def main() -> int:
     parser.add_argument("--all", action="store_true", help="extract every file on the disc")
     parser.add_argument("--list", action="store_true", help="only list files")
     parser.add_argument("--hash-image", action="store_true", help="also print the SHA-1 of the whole image file")
+    parser.add_argument("--force", action="store_true",
+                        help="extract even when the boot ELF is not the supported build (nothing in config/ will match it)")
     args = parser.parse_args()
 
     image_path = resolve_image(args.image)
@@ -146,27 +148,41 @@ def main() -> int:
             print(f"{size:>12}  {name}")
         return 0
 
+    if "SYSTEM.CNF" not in files:
+        print("error: no SYSTEM.CNF on this image: not a PlayStation 2 game disc.", file=sys.stderr)
+        return 2
     cnf = disc.read(*files["SYSTEM.CNF"])
     elf_name = boot_elf_name(cnf)
-    wanted = sorted(files) if args.all else ["SYSTEM.CNF", elf_name] + sorted(n for n in files if n.startswith("SYS/"))
+    if elf_name not in files:
+        print(f"error: SYSTEM.CNF names the boot file {elf_name}, which is not on this image.", file=sys.stderr)
+        return 2
 
-    for name in wanted:
-        dest = args.out / name
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(disc.read(*files[name]))
-    print(f"extracted {len(wanted)} files to {args.out}")
-
+    # The disc is checked before anything is written: only the supported build's addresses are in config/.
     elf = disc.read(*files[elf_name])
     crc32 = zlib.crc32(elf) & 0xFFFFFFFF
     p2crc = pcsx2_crc(elf)
     print(f"boot ELF: {elf_name}  size={len(elf)}  crc32={crc32:08X}  pcsx2_crc={p2crc:08X}  sha1={hashlib.sha1(elf).hexdigest()}")
     known = KNOWN_ELFS.get(elf_name)
     if known is None:
-        print("warning: this is not the supported build (SLUS_203.77). Addresses in config/ will not match.")
+        problem = f"this disc boots {elf_name}, not the supported Metropolismania (USA) build SLUS_203.77"
     elif known["pcsx2_crc"] != p2crc or (known["crc32"] is not None and known["crc32"] != crc32):
-        print("warning: boot ELF does not match the supported SLUS-20377 v1.02 build.")
+        problem = "this SLUS_203.77 is not the supported disc revision (SLUS-20377, VER 1.02)"
     else:
+        problem = None
         print("boot ELF matches the supported build (SLUS-20377 v1.02).")
+    if problem is not None:
+        if not args.force:
+            print(f"error: {problem}. Nothing was extracted. The addresses in config/ are for that build only; "
+                  "--force extracts anyway.", file=sys.stderr)
+            return 3
+        print(f"warning: {problem}; extracting anyway (--force). Addresses in config/ will not match.")
+
+    wanted = sorted(files) if args.all else ["SYSTEM.CNF", elf_name] + sorted(n for n in files if n.startswith("SYS/"))
+    for name in wanted:
+        dest = args.out / name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(disc.read(*files[name]))
+    print(f"extracted {len(wanted)} files to {args.out}")
 
     if args.hash_image:
         sha1 = hashlib.sha1()

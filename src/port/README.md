@@ -197,13 +197,27 @@ For `TalkView_DrawBuilding` only vf4's y, z and w are left out: by family it end
 generated callees' register saves left there.
 A new save's name carries the console clock in seconds, which ticks between the two runs: the last digits of the sixteen
 name slots are not compared for `McManager_NewSaveName`, `McManager_PrepareNewSlot` and the pause menu's slot list.
+The runtime gives a card folder's `.` and `..` entries the host clock's time, so a scan of an empty card (the second slot of
+a test copy) ends on an entry whose two times differ between the runs: they are not compared when both runs end on one.
 
-Functions with no record the replay can finish stay at "ported" in `docs/PORT_STATUS.md` (10 of the game's
-1,481 now): the movie paths that switch threads (`Movie_DisplayStart`, `Movie_ResumeAll`), the movie decoder's
-thread and setup code (`Movie_VideoDecMain`, `Movie_DecodeLoop`, `Movie_PlayPss`, `Movie_InitAll`,
-`Movie_ClearScreen`: the original exits or hangs in the replay, or the replay switches thread; `PlayOpeningMovie`
-never runs in a capture) and the program's frame (`Main`, `MainLoop`: the loop never returns);
-`config/port_status.csv` has the full list. `App_dtor` and `Sound_Shutdown` only run when that loop ends, which it
+The functions that wait for the vertical blank are replayed with a scripted wait (difftest.cpp, "Scripted waits"): a
+stand-in for `sceGsSyncV` returns alternating fields at once, moves time on to the next replay frame (the IOP runs on
+those cycles) and counts the waits, which are compared; timer 0 reads the same values in both runs. That verifies
+`Movie_DisplayStart`, `Movie_ResumeAll` and `Movie_ClearScreen`, and `Main` and `MainLoop`, which never return, from
+boot records that stop both runs at the Nth wait (`stop<N>_000.mmdt`, up to 3,000 frames: boot, the asset load, the
+logos, the title intro and the title menu), each run in a process of its own. The wait itself is runtime code and is
+not what these records test. This found a frame size the port had wrong (`TitleScene_Update`: the title's image
+loaders live on the stack below it and their address goes into a DMA chain), which no single-function record could show.
+
+Five functions stay at "ported" in `docs/PORT_STATUS.md`: the movie decoder's threads and setup (`Movie_InitAll`,
+`Movie_PlayPss`, `Movie_VideoDecMain`, `Movie_DecodeLoop`) interleave two guest threads and the vblank interrupt by time,
+which no replay can make equal, and `PlayOpeningMovie` cannot be reached in play (the title menu has at most two
+choices, so its third answer, the opening movie, never comes). The decoder group is live-checked instead:
+`MMPC_MOVIE_CHECK=1` logs every picture the decoder counts in (its pixels' hash, frame number, slot and subtitle state),
+and a run with every port off (`MMPC_PORT_DISABLE=all`) and one with the ports log the same lines for the whole mission 1
+movie (`tools/movie_check_cmp.py` compares them). `PlayOpeningMovie` is one `Movie_PlayPss` call with the opening
+movie's path, the same call `PlayMissionMovie` (verified) makes.
+`config/port_status.csv` has the notes. `App_dtor` and `Sound_Shutdown` only run when that loop ends, which it
 never does: they are verified from made records (a loading city's state with the calls' registers). The four map
 and city constructors
 (`CityMap_ctor`, `MapPeople_ctor`, `MapObjects_ctor`, `CityRender_ctor`) are verified from records with the heap section
@@ -212,8 +226,8 @@ The rest of the functions no autoplay reaches were verified from made records (r
 arguments and a few words changed, as above). `Movie_Error` and `Movie_CbError` only print, which
 the difftest does not compare: their records show the same memory and result, and their printf arguments were
 checked against the generated code. `GameUpdate` is verified (58 records: the states that make and run the title and the briefing, running the city, the answers of the
-title, briefing and city; the two records that make the city scene hang the original too, so that step is not covered). `Main` and `MainLoop` can not be replayed (the loop never
-returns): they were checked by live runs with every function ported, new game and explore, and they stay "ported".
+title, briefing and city; the two records that make the city scene hang the original too, so that step is not covered). `Main` and `MainLoop` are verified over
+N frames from boot (the scripted waits above), and were checked by live runs with every function ported, new game and explore.
 
 ## The IOP port (`src/port/iop/`)
 

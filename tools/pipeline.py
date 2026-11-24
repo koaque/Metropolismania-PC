@@ -2,6 +2,7 @@
 """Metropolismania PC build pipeline (Windows, MSVC).
 
 Steps, in order:
+  doctor      check the prerequisites (Visual Studio, CMake, Ninja, the disc, disk space); changes nothing
   bootstrap   sync the pinned PS2Recomp submodule (+ patches/) into work/PS2Recomp
   tools       build ps2_analyzer and ps2_recomp
   extract     pull SLUS_203.77, SYSTEM.CNF and SYS/ from your disc image into original/
@@ -94,12 +95,20 @@ def ghidra_dir() -> Path:
     return Path(value)
 
 
-def msvc_env() -> dict[str, str]:
-    """Environment of a vcvars64 shell, so cl.exe, the Windows SDK and Ninja are on PATH."""
+def find_visual_studio() -> str | None:
+    """The installation folder of the newest Visual Studio with the C++ x64 tools, or None."""
     vswhere = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Microsoft Visual Studio/Installer/vswhere.exe"
+    if not vswhere.exists():
+        return None
     install = subprocess.run(
         [str(vswhere), "-latest", "-products", "*", "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-         "-property", "installationPath"], capture_output=True, text=True, check=True).stdout.strip()
+         "-property", "installationPath"], capture_output=True, text=True).stdout.strip()
+    return install or None
+
+
+def msvc_env() -> dict[str, str]:
+    """Environment of a vcvars64 shell, so cl.exe, the Windows SDK and Ninja are on PATH."""
+    install = find_visual_studio()
     if not install:
         sys.exit("Visual Studio with the C++ x64 tools was not found")
     vcvars = Path(install) / "VC/Auxiliary/Build/vcvars64.bat"
@@ -252,6 +261,36 @@ def cmd_analyze(args: argparse.Namespace) -> None:
                 "-postScript", "DecompileAll.java", str(DECOMP_DIR)]
     run(cmd)
     filter_function_map()
+    save_export_stubs()
+
+
+# The stub lists of Ghidra's export (the SDK functions bound to runtime handlers, and the untracked ones), kept in config/ so
+# a clone builds without Ghidra: recompile uses work/ghidra_export.toml when an analysis made one, else this copy, which
+# analyze rewrites. Names and addresses only, like config/funcmap.csv (the export also holds this machine's paths).
+EXPORT_STUBS_TOML = CONFIG / "ghidra_stubs.toml"
+
+
+def save_export_stubs() -> None:
+    if not GHIDRA_EXPORT_TOML.exists():
+        return
+    export = tomllib.loads(GHIDRA_EXPORT_TOML.read_text()).get("general", {})
+    lines = ["# Written by tools/pipeline.py analyze from Ghidra's export (ExportPS2Functions.java); recompile merges these",
+             "# into [general] when work/ghidra_export.toml is absent (a build without Ghidra). Do not edit by hand.", "",
+             "[general]"]
+    for key in ("stubs", "untracked_stubs"):
+        lines.append(f"{key} = [")
+        lines += [f'    "{name}",' for name in export.get(key, [])]
+        lines.append("]")
+    EXPORT_STUBS_TOML.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
+
+
+def export_stub_lists() -> dict | None:
+    """[general] stubs and untracked_stubs from the analysis: work/ghidra_export.toml, or config/ghidra_stubs.toml without one
+    (None when there is neither)."""
+    for path in (GHIDRA_EXPORT_TOML, EXPORT_STUBS_TOML):
+        if path.exists():
+            return tomllib.loads(path.read_text()).get("general", {})
+    return None
 
 
 def cmd_map(args: argparse.Namespace) -> None:
@@ -407,11 +446,10 @@ def render_config() -> None:
     data = tomllib.loads(text)
     options = data.pop("pipeline", {})
     general = data.setdefault("general", {})
-    if GHIDRA_EXPORT_TOML.exists():
-        export = tomllib.loads(GHIDRA_EXPORT_TOML.read_text()).get("general", {})
+    export = export_stub_lists()
+    if export is not None:
         for key in ("stubs", "untracked_stubs"):
-            merged = list(dict.fromkeys(general.get(key, []) + export.get(key, [])))
-            general[key] = merged
+            general[key] = list(dict.fromkeys(general.get(key, []) + export.get(key, [])))
     # Prefer the game's own (recompiled) SDK code over runtime handlers that are still TODO:
     # a TODO handler only logs and returns -1, while the original code at least does the real work
     # against the emulated hardware. [pipeline].keep_todo_stubs forces a binding anyway.
@@ -633,9 +671,72 @@ def cmd_test(_: argparse.Namespace) -> None:
     log(f"ps2x_tests exit code {code}; log {out}")
 
 
+# The memory card. The runtime keeps it as a folder, original/mc0 beside the ELF: the saves played with (and those
+# tools/mc_extract.py copies from a PCSX2 card). Test runs never write there: each gets a copy in work/cards/ (MMPC_CARD_DIR,
+# src/overrides/metropolismania_overrides.cpp), so a test that saves, or a replay of the game's save code, cannot change a
+# save, and every test starts from the same card. `play` copies the card to original/mc0-backups/ before it starts.
+CARD = ORIGINAL / "mc0"
+# The card in the second slot (port 1): the runtime keeps it beside the first, as mc1 next to mc0 and as <folder>_slot1 next
+# to any other folder (MemoryCard.cpp getMcRootPath), so a test copy's second card is <copy>_slot1.
+CARD_SLOT1 = ORIGINAL / "mc1"
+TEST_CARDS = WORK / "cards"
+CARD_BACKUPS = ORIGINAL / "mc0-backups"
+
+
+def keep_newest(folder: Path, count: int) -> None:
+    """Deletes all but the `count` newest subfolders of `folder`, by when they were made (copytree gives a copy the
+    source's modification time, so that cannot tell them apart), each with its second slot's <name>_slot1 folder."""
+    if not folder.is_dir():
+        return
+    def made(p: Path) -> tuple:
+        info = p.stat()
+        return (getattr(info, "st_birthtime", info.st_ctime), p.name)
+    cards = (p for p in folder.iterdir() if p.is_dir() and not p.name.endswith("_slot1"))
+    for old in sorted(cards, key=made)[:-count]:
+        shutil.rmtree(old, ignore_errors=True)
+        shutil.rmtree(old.with_name(old.name + "_slot1"), ignore_errors=True)
+
+
+def new_folder_name(parent: Path, stem: str) -> Path:
+    """parent/stem, or parent/stem-2, -3 ... when that is taken (two copies in the same second)."""
+    path, n = parent / stem, 1
+    while path.exists():
+        n += 1
+        path = parent / f"{stem}-{n}"
+    return path
+
+
+def test_card(kind: str, env: dict) -> None:
+    """Points a test run at a fresh copy of the cards in both slots (unless the caller chose a card with MMPC_CARD_DIR)."""
+    if env.get("MMPC_CARD_DIR"):
+        return
+    TEST_CARDS.mkdir(parents=True, exist_ok=True)
+    keep_newest(TEST_CARDS, 7)
+    copy = new_folder_name(TEST_CARDS, f"{dt.datetime.now():%Y%m%d-%H%M%S}-{kind}-{os.getpid()}")
+    if CARD.is_dir():
+        shutil.copytree(CARD, copy)
+    else:
+        copy.mkdir()
+    if CARD_SLOT1.is_dir():
+        shutil.copytree(CARD_SLOT1, copy.with_name(copy.name + "_slot1"), dirs_exist_ok=True)
+    env["MMPC_CARD_DIR"] = str(copy)
+
+
+def back_up_card() -> None:
+    """A copy of the card in original/mc0-backups/<date-time>/ before a play session; the newest 10 are kept."""
+    if not CARD.is_dir() or not any(CARD.iterdir()):
+        return
+    CARD_BACKUPS.mkdir(parents=True, exist_ok=True)
+    backup = new_folder_name(CARD_BACKUPS, f"{dt.datetime.now():%Y%m%d-%H%M%S}")
+    shutil.copytree(CARD, backup)
+    keep_newest(CARD_BACKUPS, 10)
+    log(f"memory card backed up to {backup}")
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Run the game in a normal, visible window, capture its log, optionally take screenshots
-    (--shots) and feed scripted pad input (--pad, see patches/0002-pad-scripted-input.patch)."""
+    (--shots) and feed scripted pad input (--pad, see patches/0002-pad-scripted-input.patch).
+    The game uses a copy of the memory card (work/cards/), never original/mc0."""
     import time
 
     LOGS.mkdir(exist_ok=True)
@@ -659,6 +760,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     for item in args.env or []:
         key, _, value = item.partition("=")
         env[key] = value
+    test_card("run", env)
     log(f"running {exe.name} for up to {args.timeout}s, log: {log_path}")
     with log_path.open("w", encoding="utf-8", errors="replace") as fh:
         proc = subprocess.Popen([str(exe), str(ORIGINAL / ELF_NAME)], stdout=fh, stderr=subprocess.STDOUT,
@@ -727,11 +829,13 @@ skip_movies = off        # on: skip the opening movies
 
 def cmd_play(args: argparse.Namespace) -> None:
     """Play: the game in a window with no time limit, set up by settings.ini in the repository (written with the defaults
-    the first time). The log goes to logs/; the window's own log lines are not shown."""
+    the first time). The log goes to logs/; the window's own log lines are not shown. The saves are in original/mc0; a copy
+    of them goes to original/mc0-backups/ first."""
     LOGS.mkdir(exist_ok=True)
     if not SETTINGS_FILE.exists():
         SETTINGS_FILE.write_text(DEFAULT_SETTINGS, encoding="utf-8")
         log(f"wrote the default settings to {SETTINGS_FILE}")
+    back_up_card()
     exe = tool("ps2EntryRunner")
     env = dict(os.environ)
     env.setdefault("MMPC_SETTINGS", str(SETTINGS_FILE))
@@ -773,6 +877,7 @@ def cmd_difftest(args: argparse.Namespace) -> None:
     if args.only:
         env["MMPC_DIFFTEST_ONLY"] = args.only
     env.pop("PS2X_WINDOW_POS", None)
+    test_card("difftest", env)  # the replays of the game's save code write to the card
     with log_path.open("w", encoding="utf-8", errors="replace") as fh:
         code = subprocess.run([str(exe), str(ORIGINAL / ELF_NAME)], stdout=fh, stderr=subprocess.STDOUT, cwd=exe.parent,
                               env=env, timeout=int(os.environ.get("MMPC_DIFFTEST_TIMEOUT", "7200"))).returncode
@@ -842,15 +947,84 @@ def cmd_vu1_emit(args: argparse.Namespace) -> None:
         sys.exit(code)
 
 
+def cmd_doctor(_: argparse.Namespace) -> None:
+    """Checks what a build and a first run need and names what is missing, before a long build fails half way. Changes
+    nothing. Exits 1 when something required is missing."""
+    import re
+    import zlib
+
+    missing = 0
+
+    def report(ok: bool, what: str, fix: str = "", required: bool = True) -> None:
+        nonlocal missing
+        mark = "ok     " if ok else ("MISSING" if required else "note   ")
+        print(f"[doctor] {mark} {what}" + (f": {fix}" if not ok and fix else ""))
+        if not ok and required:
+            missing += 1
+
+    def version_of(command: list[str], env: dict | None = None) -> tuple[int, ...] | None:
+        # Windows finds a program on this process's PATH, not the PATH in `env`: look it up there first.
+        program = shutil.which(command[0], path=(env or os.environ).get("PATH"))
+        if program is None:
+            return None
+        try:
+            out = subprocess.run([program, *command[1:]], capture_output=True, text=True, env=env).stdout
+        except OSError:
+            return None
+        found = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", out)
+        return tuple(int(part) for part in found.groups() if part is not None) if found else None
+
+    report(sys.version_info >= (3, 11), f"Python {sys.version.split()[0]} (3.11 or newer)", "install Python 3.11 or newer")
+    report(shutil.which("git") is not None, "Git", "install Git for Windows")
+    report((ROOT / "ext/PS2Recomp/ps2xRuntime").is_dir(), "the PS2Recomp submodule (ext/PS2Recomp)",
+           "run: git submodule update --init")
+    install = find_visual_studio()
+    report(install is not None, "Visual Studio with the C++ x64 tools",
+           "install Visual Studio 2022 (Community is fine) with the \"Desktop development with C++\" workload")
+    if install is not None:
+        env = msvc_env()
+        cmake = version_of(["cmake", "--version"], env)
+        report(cmake is not None and cmake >= (3, 21), f"CMake {'.'.join(map(str, cmake)) if cmake else ''} (3.21 or newer)",
+               "it comes with Visual Studio's C++ workload, or install CMake")
+        report(version_of(["ninja", "--version"], env) is not None, "Ninja", "it comes with Visual Studio's C++ workload")
+    free = shutil.disk_usage(ROOT).free / 2**30
+    report(free >= 15, f"{free:.0f} GB free on the repository's drive (about 15 GB for the build and the disc's files)",
+           "make room, or clone to another drive")
+    elf = ORIGINAL / ELF_NAME
+    if elf.exists():
+        crc = zlib.crc32(elf.read_bytes()) & 0xFFFFFFFF
+        report(crc == 0x4FA3F727, f"original/{ELF_NAME} (CRC32 {crc:08X})",
+               "not the supported SLUS-20377 VER 1.02 build; extract your disc again (pipeline.py extract)")
+    else:
+        images = sorted(ROOT.glob("*.cue")) + sorted(ROOT.glob("*.iso"))
+        report(bool(images), "your disc image in the repository folder, or already extracted to original/",
+               "put your own disc's .cue/.bin or .iso in the repository folder, then run: pipeline.py extract")
+    have_ghidra = bool(settings().get("ghidra_install_dir") or os.environ.get("GHIDRA_INSTALL_DIR"))
+    report(have_ghidra, "Ghidra (only for analyze, pointers and map: re-analysing the ELF)",
+           "not set; the build uses the tracked analysis in config/", required=False)
+    report(CARD.is_dir() and any(CARD.iterdir()), "saves in original/mc0",
+           "none yet: a new game works; copy saves from PCSX2 with tools/mc_extract.py", required=False)
+    print(f"[doctor] {'everything needed is there' if missing == 0 else f'{missing} thing(s) missing'}")
+    if missing:
+        sys.exit(1)
+
+
 def cmd_all(args: argparse.Namespace) -> None:
-    for step in (cmd_bootstrap, cmd_tools, cmd_extract, cmd_symbols, cmd_analyze, cmd_pointers,
-                 cmd_recompile, cmd_iop_aot, cmd_stage, cmd_build):
+    """Every step. Without Ghidra (no ghidra_install_dir in work/local.json, no GHIDRA_INSTALL_DIR) the analysis steps are
+    left out and the build uses the tracked results of the last analysis: config/symbols.csv, config/funcmap.csv and
+    config/ghidra_stubs.toml."""
+    have_ghidra = bool(settings().get("ghidra_install_dir") or os.environ.get("GHIDRA_INSTALL_DIR"))
+    analysis = (cmd_symbols, cmd_analyze, cmd_pointers) if have_ghidra else ()
+    if not have_ghidra:
+        log("no Ghidra configured: building from the tracked function map (config/funcmap.csv, config/ghidra_stubs.toml)")
+    for step in (cmd_bootstrap, cmd_tools, cmd_extract, *analysis, cmd_recompile, cmd_iop_aot, cmd_stage, cmd_build):
         step(args)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("doctor", help="check what a build and a first run need (changes nothing)").set_defaults(func=cmd_doctor)
     sub.add_parser("bootstrap").set_defaults(func=cmd_bootstrap)
     sub.add_parser("tools").set_defaults(func=cmd_tools)
     p = sub.add_parser("extract")

@@ -5,6 +5,10 @@
 
 #include "ps2_runtime.h"
 
+#include <string>
+#include <utility>
+#include <vector>
+
 namespace port
 {
     bool captureRequested();
@@ -14,9 +18,12 @@ namespace port
     void installCallCounts(PS2Runtime &runtime);
     // With MMPC_GENERATED_ENTRIES set: counts the entries of every function that is not ported (see difftest.cpp).
     void installGeneratedAudit(PS2Runtime &runtime);
+    // With MMPC_MOVIE_CHECK set: logs every picture the movie decoder counts in (see difftest.cpp).
+    void installMovieCheck(PS2Runtime &runtime);
     // With MMPC_DIFFTEST set: replays the records, prints the results and exits the process.
     void runDifftestIfRequested(PS2Runtime &runtime);
     // Runs this program again with MMPC_DIFFTEST_ONLY=<name> (and MMPC_DIFFTEST_CHILD=1) on the same output and waits for it:
     // its exit code (the records that failed, 124 for a hang), or -1 when it could not be started (difftest_process.cpp).
-    int replayInChildProcess(const char *name);
+    // `environment`: more variables for the child (name, value).
+    int replayInChildProcess(const char *name, const std::vector<std::pair<std::string, std::string>> &environment = {});
 }

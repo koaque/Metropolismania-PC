@@ -1,0 +1,59 @@
+Replay determinism hooks for a test harness. PS2Memory::saveDeterministicTimer0 / restoreDeterministicTimer0 read and set the state of patch 0154's deterministic timer 0 (on, the count's writes, the reads since the last write), so every replayed run can start from the same state and a call that reads the count as a random number reads the same values in each run. EeScheduler::cycleCount gives the EE cycles counted so far, so a harness that stands in for the wait for the vertical blank can move time (and with it the IOP, which runs on those cycles) on to the same point in every run, as the wait does.
+
+diff --git a/ps2xRuntime/include/runtime/ps2_memory.h b/ps2xRuntime/include/runtime/ps2_memory.h
+--- a/ps2xRuntime/include/runtime/ps2_memory.h
++++ b/ps2xRuntime/include/runtime/ps2_memory.h
+@@ -336,6 +336,16 @@ public:
+     };
+     std::array<EeTimerState, 4> saveEeTimers() const noexcept;
+     void restoreEeTimers(const std::array<EeTimerState, 4> &state) noexcept;
++    // The deterministic timer 0 (PS2X_TIMER0=frame) as a value: whether it is on, and the count's writes and the reads since the
++    // last write, which decide what the next read returns. A test harness turns it on and starts each replayed run from the
++    // same state, so a call that reads the count (as a random number) reads the same values in every run.
++    struct DeterministicTimer0State
++    {
++        bool on = false;
++        uint32_t writes = 0, reads = 0;
++    };
++    static DeterministicTimer0State saveDeterministicTimer0() noexcept;
++    static void restoreDeterministicTimer0(const DeterministicTimer0State &state) noexcept;
+ 
+     using GifPacketCallback = std::function<void(const uint8_t *, uint32_t)>;
+     void setGifPacketCallback(GifPacketCallback cb) { m_gifPacketCallback = std::move(cb); }
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -495,6 +495,20 @@ void PS2Memory::restoreEeTimers(const std::array<EeTimerState, 4> &state) noexce
+         m_eeTimers[i] = {state[i].count, state[i].mode, state[i].compare, state[i].hold, state[i].clockRemainder};
+ }
+ 
++PS2Memory::DeterministicTimer0State PS2Memory::saveDeterministicTimer0() noexcept
++{
++    const DeterministicTimer0 &timer = deterministicTimer0();
++    return {timer.on, timer.writes, timer.reads};
++}
++
++void PS2Memory::restoreDeterministicTimer0(const DeterministicTimer0State &state) noexcept
++{
++    DeterministicTimer0 &timer = deterministicTimer0();
++    timer.on = state.on;
++    timer.writes = state.writes;
++    timer.reads = state.reads;
++}
++
+ uint32_t PS2Memory::advanceEeTimers(uint64_t eeCycles) noexcept
+ {
+     if (eeCycles == 0u)
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -292,6 +292,9 @@ public:
+     void enterNoPreempt() noexcept { ++m_noPreemptDepth; }
+     void leaveNoPreempt() noexcept { --m_noPreemptDepth; }
+     [[nodiscard]] bool inNoPreempt() const noexcept { return m_noPreemptDepth != 0u; }
++    // The EE cycles counted so far (accountCycles). Executor thread only; a test harness reads it to move time on to a fixed
++    // point, as a wait for the vertical blank would.
++    [[nodiscard]] uint64_t cycleCount() const noexcept { return m_eeCycle; }
+     [[nodiscard]] bool isExecutingGuest() const noexcept;
+ 
+     // Kernel object API. All calls except postEvent/requestStop execute on the

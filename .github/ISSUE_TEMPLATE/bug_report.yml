@@ -1,0 +1,57 @@
+name: Bug report
+description: Something in the PC port behaves differently from the PS2 game, crashes or looks wrong.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing. Please never attach a disc image, the game's ELF or IRX files, movies, saves or anything else
+        taken from the disc: the repository may not hold game data. (日本語でも構いません。)
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what the PS2 game (or PCSX2) does at the same point.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to get there
+      description: Where in the game it happens (title, briefing, city, a menu, a movie, a talk) and the steps that lead to it.
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: The output of `git rev-parse --short HEAD` in your clone.
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Windows version and graphics card
+      description: For example "Windows 11 24H2, RTX 4070, driver 566.36".
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: settings.ini
+      description: The contents of settings.ini in your clone (or "defaults").
+      render: ini
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: |
+        Drag the session's log here: `logs/play-<date-time>.log` (the newest one). It names your clone's folder, which may
+        include your Windows user name; edit that out if you like.
+  - type: checkboxes
+    id: disc
+    attributes:
+      label: Your disc
+      options:
+        - label: My game files come from my own Metropolismania (USA) disc, and `pipeline.py extract` said the boot ELF matches the supported build (SLUS-20377 v1.02).
+          required: true

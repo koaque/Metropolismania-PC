@@ -1,8 +1,8 @@
 // The application roots: mm_Main builds the App on its stack and hands it to mm_MainLoop, which runs one frame after
 // another (the pad, the queues, the display lists, the game update through the App's vtable, the vsync); mm_GameUpdate
 // is the game's frame, a state machine that makes and runs one scene at a time; mm_App_ctor brings up the IOP, the
-// modules, the display and the queues. None of them can be replayed by the difftest (the loop never returns, the
-// constructor restarts the IOP), so they stay "ported" and are checked by live runs.
+// modules, the display and the queues. All four are verified: App_ctor and GameUpdate from their own records, Main and
+// MainLoop, whose loop never returns, over N frames from boot with the difftest's scripted vsync waits (difftest.cpp).
 
 #include "game_functions.h"
 #include "game_globals.h"

@@ -16,7 +16,7 @@
 
 namespace port
 {
-    int replayInChildProcess(const char *name)
+    int replayInChildProcess(const char *name, const std::vector<std::pair<std::string, std::string>> &environment)
     {
 #ifdef _WIN32
         std::cout.flush();
@@ -28,6 +28,9 @@ namespace port
         const DWORD previousLength = GetEnvironmentVariableW(L"MMPC_DIFFTEST_ONLY", previousOnly, 4096);
         SetEnvironmentVariableW(L"MMPC_DIFFTEST_ONLY", wideName.c_str());
         SetEnvironmentVariableW(L"MMPC_DIFFTEST_CHILD", L"1");
+        const auto wide = [](const std::string &text) { return std::wstring(text.begin(), text.end()); };
+        for (const auto &[variable, value] : environment)
+            SetEnvironmentVariableW(wide(variable).c_str(), wide(value).c_str());
         // The child writes to the same output (the log the replay goes to).
         STARTUPINFOW startup{};
         startup.cb = sizeof(startup);
@@ -42,6 +45,8 @@ namespace port
         const BOOL started = CreateProcessW(nullptr, command.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &startup, &process);
         SetEnvironmentVariableW(L"MMPC_DIFFTEST_ONLY", previousLength > 0 && previousLength < 4096 ? previousOnly : nullptr);
         SetEnvironmentVariableW(L"MMPC_DIFFTEST_CHILD", nullptr);
+        for (const auto &[variable, value] : environment)
+            SetEnvironmentVariableW(wide(variable).c_str(), nullptr);
         if (!started)
             return -1;
         WaitForSingleObject(process.hProcess, INFINITE);
@@ -52,6 +57,7 @@ namespace port
         return static_cast<int>(code);
 #else
         (void)name;
+        (void)environment;
         return -1;
 #endif
     }

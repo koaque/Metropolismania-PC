@@ -10,7 +10,7 @@ stream file `0x00717C40`, video decoder `0x00717C80` (sceMpeg plus the video buf
 
 ## Functions
 
-80 functions (ported 8, verified 72). Blocks: 49 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+80 functions (ported 5, verified 75). Blocks: 49 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -34,9 +34,9 @@ stream file `0x00717C40`, video decoder `0x00717C80` (sceMpeg plus the video buf
 | `0x0019D1B0` | `int16_t mm_Movie_SendFrame(int picture)` | 596 | yes | sends the current picture and the subtitle packet to the GS (path 2 DMA, A+D setup) |
 | `0x0019D410` | `void mm_Movie_BuildImagePacket(uint32_t packet, uint32_t image, int half, int width, int height)` | 1240 | no | turns a decoded RGB32 picture into a textured-sprite GS packet (strips, A+D registers) |
 | `0x0019D8F0` | `void mm_Movie_ClearScreen(void)` | 684 | yes | clears both display buffers to black, swapping on vsync, reading the pad meanwhile |
-| `0x0019DBA0` | `void mm_Movie_PlayPss(char *name, int16_t a1, int16_t a2, int width, int16_t height, int fadeAudio, uint16_t skipButtons, int16_t fadeStep, int stack0, int stack8)` | 624 | yes | (playPss) opens the PSS (cdrom0:), initialises, then pumps the demux and audio until the movie ends or a button skips it ("QuickView:%s") |
+| `0x0019DBA0` | `void mm_Movie_PlayPss(char *name, int16_t a1, int16_t a2, int width, int16_t height, int fadeAudio, uint16_t skipButtons, int16_t fadeStep, int stack0, int stack8)` | 624 | yes | (playPss) opens the PSS (cdrom0:), initialises, then pumps the demux and audio until the movie ends or a button skips it ("QuickView:%s"); live-checked, not replayable (two guest threads and the vblank interrupt interleave by time): every port off vs on decodes the same 11,608 pictures of the mission 1 movie (MMPC_MOVIE_CHECK=1, tools/movie_check_cmp.py) |
 | `0x0019DE10` | `int mm_PlayMissionMovie(char mission)` | 400 | yes | plays DATA\MPEG\MISSION<n>.PSS with its .BIN subtitles (n = a0), or ENDING.PSS for 6, once the sound driver is idle |
-| `0x0019DFA0` | `int mm_PlayOpeningMovie(void)` | 116 | yes | plays DATA\MPEG\OPENING.PSS at 640x448 once the sound driver is idle |
+| `0x0019DFA0` | `int mm_PlayOpeningMovie(void)` | 116 | yes | plays DATA\MPEG\OPENING.PSS at 640x448 once the sound driver is idle; unreachable in play (the title menu has at most two choices, so its third answer never comes); one Movie_PlayPss call, as the verified PlayMissionMovie makes |
 | `0x0019E020` | `void mm_Movie_SetSubtitleState(uint16_t state)` | 8 | no | 0x1BDD80 = a0 |
 | `0x0019E030` | `void mm_Movie_Error(int message)` | 16 | yes | (ErrMessage) prints "[ Error ] %s" |
 | `0x0019E060` | `void mm_Movie_SwitchThread(void)` | 8 | yes | (switchThread) RotateThreadReadyQueue syscall (0x2B) |
@@ -44,7 +44,7 @@ stream file `0x00717C40`, video decoder `0x00717C80` (sceMpeg plus the video buf
 | `0x0019E1D0` | `int mm_Movie_Update(void)` | 172 | yes | one step of playback: pumps the demux until the decoder reports the end, then terminates |
 | `0x0019E280` | `int mm_Movie_ReadAndDemux(void)` | 380 | yes | reads disc data into the read buffer (sceCdStRead), demuxes it (sceMpegDemuxPssRing), sends audio to the IOP and starts display and audio once both are preloaded |
 | `0x0019E400` | `void mm_Movie_ResumeAll(void)` | 80 | yes | restarts display and audio after a pause |
-| `0x0019E450` | `void mm_Movie_InitAll(int16_t a0, int16_t a1, int width, int16_t height)` | 816 | yes | (initAll) display buffers, sceMpegInit, video decoder, audio decoder (when 0x1BD9E8 is set), stream callbacks, read and decode threads, VSync and DMA handlers |
+| `0x0019E450` | `void mm_Movie_InitAll(int16_t a0, int16_t a1, int width, int16_t height)` | 816 | yes | (initAll) display buffers, sceMpegInit, video decoder, audio decoder (when 0x1BD9E8 is set), stream callbacks, read and decode threads, VSync and DMA handlers; live-checked, not replayable (two guest threads and the vblank interrupt interleave by time): every port off vs on decodes the same 11,608 pictures of the mission 1 movie (MMPC_MOVIE_CHECK=1, tools/movie_check_cmp.py) |
 | `0x0019E780` | `int mm_Movie_PcmCallback(int mpeg, int cbdata, int anyData)` | 432 | yes | (pcmCallback) stream callback for audio: skips the 4-byte sub-stream header, copies the packet into the audio decoder (ring-aware); returns 0 when there is no room |
 | `0x0019E930` | `int mm_Movie_VideoCallback(int mpeg, int cbdata, int anyData)` | 504 | yes | (videoCallback) stream callback for video: copies the packet into the IPU input buffer, records its time stamp ("pts buffer overflow"); 0 when there is no room |
 | `0x0019EB30` | `int mm_Movie_ReadBufEndGet(int readBuf, int size)` | 60 | no | (readBufEndGet) releases a1 bytes |
@@ -74,8 +74,8 @@ stream file `0x00717C40`, video decoder `0x00717C80` (sceMpeg plus the video buf
 | `0x001A01E0` | `int mm_Movie_CbStopDma(void)` | 36 | yes | (mpegStopDMA) libmpeg callback |
 | `0x001A0210` | `int mm_Movie_CbNoData(void)` | 44 | yes | (mpegNodata) libmpeg callback: switch threads, then queue more input |
 | `0x001A0240` | `int mm_Movie_CbError(int mpeg, int cbdata)` | 40 | yes | (mpegError) libmpeg callback: prints the message |
-| `0x001A0270` | `int mm_Movie_DecodeLoop(int videoDec)` | 692 | yes | (decBs0) decode thread loop: sceMpegGetPicture into the picture queue, builds image and subtitle packets, ends on sceMpegIsEnd ("decode thread: aborted") |
-| `0x001A0530` | `void mm_Movie_VideoDecMain(int videoDec)` | 96 | yes | (videoDecMain) decode thread entry: resets the buffers, runs the loop, waits for the queue to drain, state 3 (done) |
+| `0x001A0270` | `int mm_Movie_DecodeLoop(int videoDec)` | 692 | yes | (decBs0) decode thread loop: sceMpegGetPicture into the picture queue, builds image and subtitle packets, ends on sceMpegIsEnd ("decode thread: aborted"); live-checked, not replayable (two guest threads and the vblank interrupt interleave by time): every port off vs on decodes the same 11,608 pictures of the mission 1 movie (MMPC_MOVIE_CHECK=1, tools/movie_check_cmp.py) |
+| `0x001A0530` | `void mm_Movie_VideoDecMain(int videoDec)` | 96 | yes | (videoDecMain) decode thread entry: resets the buffers, runs the loop, waits for the queue to drain, state 3 (done); live-checked, not replayable (two guest threads and the vblank interrupt interleave by time): every port off vs on decodes the same 11,608 pictures of the mission 1 movie (MMPC_MOVIE_CHECK=1, tools/movie_check_cmp.py) |
 | `0x001A0590` | `int mm_Movie_VideoDecIsDone(int videoDec)` | 84 | yes | input buffer empty and libmpeg has no more pictures |
 | `0x001A05F0` | `int mm_Movie_VideoDecPutTerminator(int videoDec)` | 400 | yes | appends a sequence end code (0x1BD9F0) to the input once there is room; 0 until then |
 | `0x001A0780` | `int mm_Movie_VideoDecPutTs(int videoDec, int64_t pts, int64_t dts, int start, int length)` | 60 | yes | (videoDecPutTs) time stamp for input offset a3 |
